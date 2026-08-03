@@ -1,0 +1,6 @@
+{
+  "name": "Mesa 22",
+  "description": "Plataforma multi-restaurante completa de pedidos, punto de venta (POS), cocina y reparto en tiempo real",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
