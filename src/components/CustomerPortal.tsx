@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { 
   auth, 
@@ -1491,13 +1492,42 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
                 </div>
 
                 {cart.length > 0 && (
-                  <button 
+                  <motion.button 
+                    key={`comanda-btn-${cart.length}`}
+                    initial={{ scale: 0.85, opacity: 0 }}
+                    animate={{ 
+                      scale: [1, 1.06, 1],
+                      boxShadow: [
+                        '0 4px 14px rgba(234, 88, 12, 0.4)',
+                        '0 12px 28px rgba(234, 88, 12, 0.75)',
+                        '0 4px 14px rgba(234, 88, 12, 0.4)'
+                      ]
+                    }}
+                    transition={{
+                      scale: { repeat: Infinity, duration: 1.8, ease: "easeInOut" },
+                      boxShadow: { repeat: Infinity, duration: 1.8, ease: "easeInOut" }
+                    }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={handleOpenCart}
-                    className="bg-brand-primary text-white px-4 sm:px-5 py-2.5 rounded-full font-extrabold text-xs sm:text-sm flex items-center shadow-md hover:bg-brand-primary-hover hover:scale-105 transition cursor-pointer shrink-0"
+                    className="relative bg-gradient-to-r from-brand-primary via-orange-500 to-amber-600 text-white px-4.5 sm:px-5.5 py-2.5 rounded-full font-black text-xs sm:text-sm flex items-center shadow-xl cursor-pointer shrink-0 border border-orange-300/40 group overflow-hidden"
                   >
-                    <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2" />
-                    Comanda ({cart.length})
-                  </button>
+                    {/* Glowing Ping Dot */}
+                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 z-10">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-80"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-400 border-2 border-white shadow-xs"></span>
+                    </span>
+
+                    {/* Shimmer Effect */}
+                    <motion.span 
+                      className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12"
+                      animate={{ x: ['-100%', '200%'] }}
+                      transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut", repeatDelay: 1 }}
+                    />
+
+                    <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 mr-1.5 sm:mr-2 animate-bounce shrink-0 relative z-10" style={{ animationDuration: '1.6s' }} />
+                    <span className="tracking-wide relative z-10">Comanda ({cart.length})</span>
+                  </motion.button>
                 )}
               </div>
             </div>
@@ -2247,6 +2277,42 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
             </div>
           </div>
         </div>
+      )}
+
+      {/* Floating Mobile Comanda Button */}
+      {cart.length > 0 && !isCartOpen && (
+        <AnimatePresence>
+          <motion.button
+            key={`mobile-floating-comanda-${cart.length}`}
+            initial={{ y: 50, opacity: 0, scale: 0.8 }}
+            animate={{ 
+              y: 0, 
+              opacity: 1, 
+              scale: [1, 1.05, 1],
+              boxShadow: [
+                '0 8px 20px rgba(234, 88, 12, 0.45)',
+                '0 14px 32px rgba(234, 88, 12, 0.85)',
+                '0 8px 20px rgba(234, 88, 12, 0.45)'
+              ]
+            }}
+            exit={{ y: 50, opacity: 0, scale: 0.8 }}
+            transition={{
+              scale: { repeat: Infinity, duration: 1.8, ease: "easeInOut" },
+              boxShadow: { repeat: Infinity, duration: 1.8, ease: "easeInOut" }
+            }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={handleOpenCart}
+            className="fixed bottom-6 right-5 z-40 bg-gradient-to-r from-brand-primary via-orange-500 to-amber-600 text-white px-5 py-3.5 rounded-full font-black text-sm flex items-center gap-2.5 shadow-2xl border-2 border-white/90 cursor-pointer sm:hidden overflow-hidden"
+          >
+            <span className="relative flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-80"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-400 border border-white"></span>
+            </span>
+            <ShoppingBag className="w-5 h-5 animate-bounce" style={{ animationDuration: '1.6s' }} />
+            <span className="tracking-wide">Ver Comanda ({cart.length})</span>
+          </motion.button>
+        </AnimatePresence>
       )}
 
       {/* 4. SHOPPING CART SLIDE-OVER */}

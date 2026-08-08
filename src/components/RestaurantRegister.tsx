@@ -70,6 +70,7 @@ export default function RestaurantRegister() {
       plan: 'BASIC',
       remainingDays: 30,
       remainingDaysUpdatedAt: Date.now(),
+      createdAt: Date.now(),
       rating: 5.0,
       reviewsCount: 0,
       deliveryTime: '25-40 min',

@@ -49,10 +49,10 @@ import {
 
 export function getRemainingDays(rest: Restaurant | null): number {
   if (!rest) return 0;
-  if (rest.remainingDays === undefined || rest.remainingDays === null) return 0;
-  if (!rest.remainingDaysUpdatedAt) return rest.remainingDays;
-  const elapsedDays = Math.floor((Date.now() - rest.remainingDaysUpdatedAt) / (1000 * 60 * 60 * 24));
-  return rest.remainingDays - elapsedDays;
+  const initialDays = (rest.remainingDays === undefined || rest.remainingDays === null) ? 30 : rest.remainingDays;
+  const updatedAt = rest.remainingDaysUpdatedAt || rest.createdAt || Date.now();
+  const elapsedDays = Math.floor((Date.now() - updatedAt) / (1000 * 60 * 60 * 24));
+  return initialDays - elapsedDays;
 }
 
 function RemainingDaysCell({ rest, onSave }: { rest: Restaurant; onSave: (days: number) => void }) {

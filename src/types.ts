@@ -32,6 +32,7 @@ export interface Restaurant {
   plan?: 'BASIC' | 'PREMIUM' | 'ENTERPRISE';
   remainingDays?: number; // Days remaining before donation request popup appears
   remainingDaysUpdatedAt?: number; // Timestamp when remainingDays was set
+  createdAt?: number;
   rating: number;
   reviewsCount: number;
   deliveryTime: string; // e.g. "30-40 min"

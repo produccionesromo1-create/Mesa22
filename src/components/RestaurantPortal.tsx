@@ -213,16 +213,12 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
 
   const getRemainingDays = (rest: Restaurant | null) => {
     if (!rest) return 0;
-    if (rest.remainingDays === undefined || rest.remainingDays === null) {
-      return 0; // Default to 0 days
-    }
-    if (!rest.remainingDaysUpdatedAt) {
-      return rest.remainingDays;
-    }
+    const initialDays = (rest.remainingDays === undefined || rest.remainingDays === null) ? 30 : rest.remainingDays;
+    const updatedAt = rest.remainingDaysUpdatedAt || rest.createdAt || Date.now();
     const now = Date.now();
-    const elapsedMs = now - rest.remainingDaysUpdatedAt;
+    const elapsedMs = now - updatedAt;
     const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
-    return rest.remainingDays - elapsedDays;
+    return initialDays - elapsedDays;
   };
 
   const [lastPopupClosedTime, setLastPopupClosedTime] = useState<number | null>(null);
