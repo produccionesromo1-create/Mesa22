@@ -205,15 +205,6 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
                 console.error("Error updating driver avatar photo:", e);
               }
             }
-            // Set driver online / available automatically upon login
-            if (data.status === 'OFFLINE') {
-              try {
-                await updateDoc(doc(db, 'drivers', user.uid), { status: 'AVAILABLE' });
-                data.status = 'AVAILABLE';
-              } catch (updateErr) {
-                console.error('Error auto-setting driver to AVAILABLE on login:', updateErr);
-              }
-            }
             setUserProfile(data);
             setSelectedDriver(data); // Auto lock to logged-in driver
           } else {

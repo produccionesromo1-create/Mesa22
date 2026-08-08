@@ -64,11 +64,11 @@ export async function sendDriverNewOrderEmail(order: Order, db: Firestore): Prom
       return { success: false, recipients: [], message: 'No hay repartidores registrados en el sistema.' };
     }
 
-    // 3. Filter drivers STRICTLY matching the same city as the restaurant
+    // 3. Filter drivers STRICTLY matching the same city as the restaurant and strictly AVAILABLE (connected)
     const eligibleDrivers = driversList.filter((driver) => {
-      // Must not be suspended or offline (disconnected)
-      if (driver.status === 'SUSPENDED' || driver.status === 'OFFLINE') return false;
-      if (driver.status && driver.status !== 'AVAILABLE' && driver.status !== 'DELIVERING') return false;
+      // Must be connected/AVAILABLE. If driver is OFFLINE (disconnected), SUSPENDED, DELIVERING, or status is missing, DO NOT send email!
+      const driverStatus = (driver.status || '').trim().toUpperCase();
+      if (driverStatus !== 'AVAILABLE') return false;
       if (!driver.email || !driver.email.includes('@')) return false;
 
       // If restaurant has no city defined, drivers without city or with 'todas' match
