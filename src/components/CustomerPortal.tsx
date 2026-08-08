@@ -2608,7 +2608,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
                           {placedOrder.deliveryType !== 'PICKUP' && placedOrder.driverName && (
                             <div className="pt-2 mt-2 border-t border-slate-100 text-[11px] text-slate-600 flex items-center gap-2">
                               <img 
-                                src="/driver-silhouette.jpg" 
+                                src="/driver-silhouette.svg" 
                                 alt="Repartidor" 
                                 className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0" 
                               />

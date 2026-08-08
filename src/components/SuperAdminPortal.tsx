@@ -1004,11 +1004,11 @@ export default function SuperAdminPortal() {
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <img 
-                          src={(!driver.photo || driver.photo.includes('unsplash.com') || driver.photo.includes('photo-15')) ? '/driver-silhouette.jpg' : driver.photo} 
+                          src={(!driver.photo || driver.photo.includes('unsplash.com') || driver.photo.includes('photo-15')) ? '/driver-silhouette.svg' : driver.photo} 
                           alt={driver.name} 
                           className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0 bg-white" 
                           referrerPolicy="no-referrer" 
-                          onError={(e) => { (e.target as HTMLImageElement).src = '/driver-silhouette.jpg'; }}
+                          onError={(e) => { (e.target as HTMLImageElement).src = '/driver-silhouette.svg'; }}
                         />
                         <span className="font-bold text-slate-800">{driver.name}</span>
                       </div>

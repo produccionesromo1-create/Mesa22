@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { 
   auth, 
@@ -180,9 +180,11 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalRegisterMode, setAuthModalRegisterMode] = useState(false);
 
+  const DEFAULT_DRIVER_AVATAR = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%23fff7ed"/><path d="M50 22c-9.9 0-18 8.1-18 18 0 7.3 4.4 13.6 10.7 16.3C30.6 59.8 22 71.8 22 86h56c0-14.2-8.6-26.2-20.7-29.7C63.6 53.6 68 47.3 68 40c0-9.9-8.1-18-18-18z" fill="%23ea580c"/><path d="M34 35c0-7.5 7.2-11 16-11s16 3.5 16 11c0 2-14 3.5-32 0z" fill="%239a3412"/></svg>`;
+
   const getDriverPhotoUrl = (photo?: string) => {
-    if (!photo || photo.includes('unsplash.com') || photo.includes('photo-15')) {
-      return '/driver-silhouette.jpg';
+    if (!photo || photo === '/driver-silhouette.jpg' || photo.includes('silhouette') || photo.includes('unsplash.com') || photo.includes('photo-15')) {
+      return DEFAULT_DRIVER_AVATAR;
     }
     return photo;
   };
@@ -234,6 +236,7 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
   // Realtime order notifications
   const [lastNotifiedOrderCount, setLastNotifiedOrderCount] = useState(0);
   const [showNotification, setShowNotification] = useState<Order | null>(null);
+  const lastNotifiedOrderIdRef = useRef<string | null>(null);
 
   // Set up real-time listener for driver document status, "READY" orders and orders assigned to the current driver
   useEffect(() => {
@@ -303,15 +306,15 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
         // Trigger pop-up notification & email if a new order becomes available
         if (list.length > 0) {
           const lastOrder = list[list.length - 1];
-          // Dispatch email notification to drivers
-          sendDriverNewOrderEmail(lastOrder, db).catch(err => {
-            console.error('Error sending driver notification email:', err);
-          });
+          
+          if (lastNotifiedOrderIdRef.current !== lastOrder.id) {
+            lastNotifiedOrderIdRef.current = lastOrder.id;
 
-          setShowNotification((prev) => {
-            if (prev && prev.id === lastOrder.id) {
-              return prev;
-            }
+            // Dispatch email notification to drivers
+            sendDriverNewOrderEmail(lastOrder, db).catch(err => {
+              console.error('Error sending driver notification email:', err);
+            });
+
             // Trigger push notification with sound alert for driver
             notificationService.sendPushNotification({
               title: `🏍️ ¡Nuevo Pedido Disponible en ${lastOrder.restaurantName}!`,
@@ -322,9 +325,10 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
               type: 'order'
             });
             onAudioAlert();
-            return lastOrder;
-          });
+            setShowNotification(lastOrder);
+          }
         } else {
+          lastNotifiedOrderIdRef.current = null;
           setShowNotification(null);
         }
       },
@@ -490,7 +494,7 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
                     src={getDriverPhotoUrl(editPhoto)} 
                     alt="Foto Repartidor" 
                     className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).src = '/driver-silhouette.jpg'; }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_DRIVER_AVATAR; }}
                   />
                   <label 
                     htmlFor="driver-photo-upload" 
@@ -690,7 +694,7 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
                   alt={selectedDriver.name} 
                   className="w-full h-full object-cover bg-white" 
                   referrerPolicy="no-referrer" 
-                  onError={(e) => { (e.target as HTMLImageElement).src = '/driver-silhouette.jpg'; }}
+                  onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_DRIVER_AVATAR; }}
                 />
               ) : (
                 <User className="w-5 h-5 text-white/80" />
