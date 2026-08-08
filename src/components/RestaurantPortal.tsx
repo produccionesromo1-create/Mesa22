@@ -19,6 +19,7 @@ import AuthModal from './AuthModal';
 import Logo from './Logo';
 import ProductImageUploader from './ProductImageUploader';
 import { notificationService } from '../utils/notificationService';
+import { sendDriverNewOrderEmail, sendRestaurantNewOrderEmail } from '../utils/emailService';
 import { compressImageFile } from '../utils/imageUtils';
 import { 
   Restaurant, 
@@ -1725,7 +1726,7 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
     const newOrder: any = {
       restaurantId: selectedRest.id,
       restaurantName: selectedRest.name,
-      city: selectedRest.city || undefined,
+      city: selectedRest.city || '',
       customerName: posCustomerName || 'Cliente POS',
       customerPhone: posCustomerPhone || '5500000000',
       deliveryType: posDeliveryType,
@@ -1772,6 +1773,12 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
     try {
       const docRef = await addDoc(collection(db, 'orders'), newOrder);
       const generatedId = docRef.id;
+
+      if (newOrder.deliveryType === 'DELIVERY') {
+        sendRestaurantNewOrderEmail({ id: generatedId, ...newOrder }, db).catch(err => {
+          console.error('Error sending restaurant notification email:', err);
+        });
+      }
 
       // If active cash session exists, register sale transaction
       if (activeCashSession && customStatus === 'DELIVERED') {
@@ -1840,6 +1847,15 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
         status: nextStatus,
         updatedAt: Date.now()
       });
+
+      if (nextStatus === 'READY') {
+        const orderDoc = orders.find(o => o.id === orderId);
+        if (orderDoc && orderDoc.deliveryType === 'DELIVERY') {
+          sendDriverNewOrderEmail({ ...orderDoc, status: 'READY' }, db).catch(err => {
+            console.error('Error sending driver notification email:', err);
+          });
+        }
+      }
     } catch (err) {
       console.error(err);
     }
@@ -1897,6 +1913,13 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
         soundType: 'new_order',
         type: 'order'
       });
+
+      // Dispatch email notification to drivers
+      if (order.deliveryType === 'DELIVERY') {
+        sendDriverNewOrderEmail({ ...order, status: 'READY' }, db).catch(err => {
+          console.error('Error sending driver notification email:', err);
+        });
+      }
 
       alert(`Se quitó la asignación del repartidor. El pedido #${order.id.slice(0, 5).toUpperCase()} volvió a estar disponible para todos los repartidores.`);
     } catch (err) {
@@ -6969,12 +6992,12 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-2">Twitter / X (URL)</label>
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-2">Ubicación / Maps (URL)</label>
                   <input
                     type="url"
                     value={editRestTwitter}
                     onChange={(e) => setEditRestTwitter(e.target.value)}
-                    placeholder="Ej. https://twitter.com/mitienda"
+                    placeholder="Ej. https://maps.google.com/?q=..."
                     className="w-full bg-slate-50 border border-gray-200 text-slate-800 font-semibold rounded-2xl p-3 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-hidden"
                   />
                 </div>

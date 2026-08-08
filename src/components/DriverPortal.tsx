@@ -7,6 +7,7 @@ import {
   getDocs, 
   doc, 
   updateDoc, 
+  setDoc,
   onSnapshot, 
   query, 
   where,
@@ -16,6 +17,7 @@ import AuthModal from './AuthModal';
 import Logo from './Logo';
 import { Driver, Order, City } from '../types';
 import { notificationService } from '../utils/notificationService';
+import { sendDriverNewOrderEmail } from '../utils/emailService';
 import { 
   Truck, 
   MapPin, 
@@ -147,13 +149,13 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
         phone: editPhone.trim(),
         city: editCity.trim(),
         vehicle: editVehicle,
-        licenseNumber: editLicense.trim() || undefined,
+        licenseNumber: editLicense.trim() || '',
         workingZone: editWorkingZone.trim() || 'Zona Central',
         photo: editPhoto.trim() || '/driver-silhouette.jpg',
         updatedAt: Date.now()
       };
 
-      await updateDoc(doc(db, 'drivers', selectedDriver.id), updatedData);
+      await setDoc(doc(db, 'drivers', selectedDriver.id), updatedData, { merge: true });
 
       const mergedDriver = {
         ...selectedDriver,
@@ -298,10 +300,15 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
         });
         setAvailableDeliveries(list);
 
-        // Trigger pop-up notification if a new order becomes available
+        // Trigger pop-up notification & email if a new order becomes available
         if (list.length > 0) {
+          const lastOrder = list[list.length - 1];
+          // Dispatch email notification to drivers
+          sendDriverNewOrderEmail(lastOrder, db).catch(err => {
+            console.error('Error sending driver notification email:', err);
+          });
+
           setShowNotification((prev) => {
-            const lastOrder = list[list.length - 1];
             if (prev && prev.id === lastOrder.id) {
               return prev;
             }

@@ -199,43 +199,7 @@ const defaultProducts: Product[] = [
   }
 ];
 
-const defaultDrivers: Driver[] = [
-  {
-    id: 'driver_1',
-    name: 'Carlos Mendoza',
-    phone: '55-7777-8888',
-    email: 'carlos.mendoza@mesa22.com',
-    photo: '/driver-silhouette.jpg',
-    vehicle: 'Motorcycle',
-    licenseNumber: 'MX-98234-A',
-    workingZone: 'Zona Centro y Norte',
-    status: 'AVAILABLE',
-    rating: 4.9
-  },
-  {
-    id: 'driver_2',
-    name: 'Lucía Fernández',
-    phone: '55-1111-2222',
-    email: 'lucia.f@mesa22.com',
-    photo: '/driver-silhouette.jpg',
-    vehicle: 'Bicycle',
-    workingZone: 'Polanco y Reforma',
-    status: 'AVAILABLE',
-    rating: 4.8
-  },
-  {
-    id: 'driver_3',
-    name: 'Mario Robles',
-    phone: '55-4444-9999',
-    email: 'mario.robles@mesa22.com',
-    photo: '/driver-silhouette.jpg',
-    vehicle: 'Car',
-    licenseNumber: 'MX-45672-B',
-    workingZone: 'Zona Poniente',
-    status: 'AVAILABLE',
-    rating: 4.7
-  }
-];
+const defaultDrivers: Driver[] = [];
 
 const defaultCities: City[] = [
   { id: 'city_cdmx', name: 'Ciudad de México', createdAt: Date.now() },

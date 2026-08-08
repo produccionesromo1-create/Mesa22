@@ -53,7 +53,7 @@ export default function DriverRegister() {
       email,
       photo: photo.trim() || '/driver-silhouette.jpg',
       vehicle,
-      licenseNumber: licenseNumber.trim() || undefined,
+      licenseNumber: licenseNumber.trim() || '',
       workingZone,
       city: selectedCity,
       status: 'AVAILABLE', // Starts as available

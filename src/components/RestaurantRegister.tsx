@@ -63,8 +63,8 @@ export default function RestaurantRegister() {
       deliveryZone: deliveryZone || 'Área local 5km',
       city: selectedCity,
       socials: {
-        facebook: facebook.trim() || undefined,
-        instagram: instagram.trim() || undefined
+        facebook: facebook.trim() || '',
+        instagram: instagram.trim() || ''
       },
       status: 'PENDING',
       plan: 'BASIC',

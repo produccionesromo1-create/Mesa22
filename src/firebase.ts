@@ -478,11 +478,11 @@ export async function seedDatabase() {
         await firestoreSetDoc(firestoreDoc(db, 'products', prod.id), prod);
       }
 
-      // 3. Initial Drivers
-      const sampleDrivers: Driver[] = localGetDocs('drivers');
-      for (const d of sampleDrivers) {
-        await firestoreSetDoc(firestoreDoc(db, 'drivers', d.id), d);
-      }
+      // 3. Initial Drivers (disabled)
+      // const sampleDrivers: Driver[] = localGetDocs('drivers');
+      // for (const d of sampleDrivers) {
+      //   await firestoreSetDoc(firestoreDoc(db, 'drivers', d.id), d);
+      // }
 
       // 4. Seeding sample ingredients and suppliers for rest_1
       const sampleIngredients: Ingredient[] = localGetDocs('ingredients');

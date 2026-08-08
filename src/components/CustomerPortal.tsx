@@ -19,6 +19,7 @@ import Logo from './Logo';
 import { Restaurant, Product, Order, OrderItem, City } from '../types';
 import { checkIsRestaurantOpen } from '../utils/restaurantSchedule';
 import { notificationService } from '../utils/notificationService';
+import { sendDriverNewOrderEmail, sendRestaurantNewOrderEmail } from '../utils/emailService';
 import { 
   Search, 
   MapPin, 
@@ -637,7 +638,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
       {
         product: activeProduct,
         quantity: 1,
-        variant: selectedVariant || undefined,
+        variant: selectedVariant || null,
         extras: selectedExtras,
         notes: itemNotes
       }
@@ -707,10 +708,10 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
     const newOrder: Omit<Order, 'id'> = {
       restaurantId: selectedRestaurant.id,
       restaurantName: selectedRestaurant.name,
-      city: selectedRestaurant.city || undefined,
+      city: selectedRestaurant.city || '',
       customerName: custName,
       customerPhone: custPhone,
-      customerEmail: custEmail || undefined,
+      customerEmail: custEmail || '',
       deliveryType: deliveryType,
       status: 'PENDING',
       items: orderItems,
@@ -719,7 +720,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
       driverPaymentRate: selectedRestaurant.driverPayment ?? 10,
       total: total,
       paymentMethod: deliveryType === 'DELIVERY' ? 'CASH_ON_DELIVERY' : 'CASH_ON_PICKUP',
-      notes: orderNotes || undefined,
+      notes: orderNotes || '',
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -756,6 +757,16 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
       setPlacedOrder(placed);
       setCart([]);
       setCheckoutStep('success');
+
+      // Dispatch email notification to drivers & restaurant owner if order is for delivery
+      if (placed.deliveryType === 'DELIVERY') {
+        sendDriverNewOrderEmail(placed, db).catch(err => {
+          console.error('Error sending driver notification email:', err);
+        });
+        sendRestaurantNewOrderEmail(placed, db).catch(err => {
+          console.error('Error sending restaurant notification email:', err);
+        });
+      }
 
       // Save / update customer profile data in Firestore for future orders
       if (currentUser?.uid) {
@@ -833,7 +844,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
       const newOrder: Omit<Order, 'id'> = {
         restaurantId: selectedRestaurant.id,
         restaurantName: selectedRestaurant.name,
-        city: selectedRestaurant.city || undefined,
+        city: selectedRestaurant.city || '',
         customerName: existingCustomerName || custName || `Mesa ${tableFromQr}`,
         customerPhone: existingCustomerPhone || custPhone || '0000000000',
         deliveryType: 'DINE_IN',
@@ -1425,7 +1436,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
                         className="px-3 py-1.5 bg-white rounded-xl text-xs font-bold text-slate-700 hover:text-brand-primary hover:scale-105 transition shadow-xs border border-slate-100 flex items-center gap-1.5"
                       >
                         <span className="w-2 h-2 bg-sky-400 rounded-full shrink-0"></span>
-                        Twitter
+                        Ubicación
                       </a>
                     )}
                   </div>
