@@ -1174,7 +1174,37 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
             </div>
           </div>
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2.5">
+          {cart.length > 0 && (
+            <motion.button
+              key={`header-comanda-${cart.length}`}
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ 
+                scale: [1, 1.05, 1],
+                boxShadow: [
+                  '0 4px 14px rgba(234, 88, 12, 0.4)',
+                  '0 10px 24px rgba(234, 88, 12, 0.75)',
+                  '0 4px 14px rgba(234, 88, 12, 0.4)'
+                ]
+              }}
+              transition={{
+                scale: { repeat: Infinity, duration: 1.8, ease: "easeInOut" },
+                boxShadow: { repeat: Infinity, duration: 1.8, ease: "easeInOut" }
+              }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleOpenCart}
+              className="relative bg-gradient-to-r from-brand-primary via-orange-500 to-amber-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center gap-2 shadow-lg cursor-pointer border border-orange-300/40 overflow-hidden"
+            >
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-80"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400 border border-white"></span>
+              </span>
+              <ShoppingBag className="w-4 h-4 animate-bounce" style={{ animationDuration: '1.6s' }} />
+              <span className="tracking-wide">Comanda ({cart.length})</span>
+            </motion.button>
+          )}
+
           {currentUser ? (
             <button
               onClick={() => signOut(auth)}
@@ -2279,11 +2309,11 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
         </div>
       )}
 
-      {/* Floating Mobile Comanda Button */}
+      {/* Floating Comanda Button for Mobile & Desktop Computers */}
       {cart.length > 0 && !isCartOpen && (
         <AnimatePresence>
           <motion.button
-            key={`mobile-floating-comanda-${cart.length}`}
+            key={`floating-comanda-${cart.length}`}
             initial={{ y: 50, opacity: 0, scale: 0.8 }}
             animate={{ 
               y: 0, 
@@ -2303,14 +2333,19 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
             onClick={handleOpenCart}
-            className="fixed bottom-6 right-5 z-40 bg-gradient-to-r from-brand-primary via-orange-500 to-amber-600 text-white px-5 py-3.5 rounded-full font-black text-sm flex items-center gap-2.5 shadow-2xl border-2 border-white/90 cursor-pointer sm:hidden overflow-hidden"
+            className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 z-40 bg-gradient-to-r from-brand-primary via-orange-500 to-amber-600 text-white px-5 sm:px-7 py-3.5 sm:py-4 rounded-full font-black text-sm sm:text-base flex items-center gap-2.5 sm:gap-3 shadow-2xl border-2 border-white/90 cursor-pointer overflow-hidden group"
           >
             <span className="relative flex h-3.5 w-3.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-80"></span>
               <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-400 border border-white"></span>
             </span>
-            <ShoppingBag className="w-5 h-5 animate-bounce" style={{ animationDuration: '1.6s' }} />
-            <span className="tracking-wide">Ver Comanda ({cart.length})</span>
+            <motion.span 
+              className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/35 to-transparent transform -skew-x-12"
+              animate={{ x: ['-100%', '200%'] }}
+              transition={{ repeat: Infinity, duration: 2.2, ease: "easeInOut", repeatDelay: 0.8 }}
+            />
+            <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 animate-bounce shrink-0 relative z-10" style={{ animationDuration: '1.6s' }} />
+            <span className="tracking-wide relative z-10">Ver Comanda ({cart.length})</span>
           </motion.button>
         </AnimatePresence>
       )}
