@@ -303,8 +303,8 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
         });
         setAvailableDeliveries(list);
 
-        // Trigger pop-up notification & email if a new order becomes available
-        if (list.length > 0) {
+        // Trigger pop-up notification & email if a new order becomes available (ONLY if driver is online/AVAILABLE)
+        if (list.length > 0 && selectedDriver.status === 'AVAILABLE') {
           const lastOrder = list[list.length - 1];
           
           if (lastNotifiedOrderIdRef.current !== lastOrder.id) {
@@ -369,22 +369,21 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
       unsubscribeAvailable();
       unsubscribeMyDeliveries();
     };
-  }, [selectedDriver?.id, selectedDriver?.city, restaurantCityMap]);
+  }, [selectedDriver?.id, selectedDriver?.status, selectedDriver?.city, restaurantCityMap]);
 
   // Accept a Delivery
   const handleAcceptDelivery = async (orderId: string) => {
     if (!selectedDriver) return;
 
-    // Check: Limit of 3 combined orders (delivered pending payment + active assigned orders)
-    const totalDriverCount = activeOrders.length + unpaidDeliveredOrders.length;
+    // Check: Limit of 3 combined UNPAID orders (unpaid active + unpaid delivered)
+    const unpaidActiveOrders = activeOrders.filter(o => o.cashierPaid !== true);
+    const totalDriverCount = unpaidActiveOrders.length + unpaidDeliveredOrders.length;
+
     if (totalDriverCount >= 3) {
-      const pendingTotal = unpaidDeliveredOrders.reduce((sum, o) => sum + o.total, 0);
       alert(
-        `⚠️ Límite Alcanzado: No puedes asignarte más pedidos.\n\nTienes ${activeOrders.length} pedido(s) asignado(s) en curso y ${unpaidDeliveredOrders.length} pedido(s) entregado(s) pendiente(s) de liquidar en caja (Total acumulado: ${totalDriverCount}/3).\n\n${
-          unpaidDeliveredOrders.length > 0
-            ? `Pasa a caja a liquidar tu saldo ($${pendingTotal}) o completa tus entregas para poder tomar más pedidos.`
-            : 'Entrega los pedidos que tienes en curso para poder tomar más entregas.'
-        }`
+        `⚠️ Límite Alcanzado (3/3): No puedes asignarte más pedidos.\n\n` +
+        `Tienes ${unpaidActiveOrders.length} pedido(s) activo(s) sin pagar en caja y ${unpaidDeliveredOrders.length} pedido(s) entregado(s) pendiente(s) de liquidar.\n\n` +
+        `💡 Para liberar espacio en tu carga (3/3), entrega el pago en efectivo a la cajera del restaurante para que lo registre en su sistema.`
       );
       return;
     }
@@ -419,6 +418,8 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
   // Change Order Status
   const handleUpdateStatus = async (orderId: string, nextStatus: 'SHIPPED' | 'DELIVERED') => {
     if (!selectedDriver) return;
+    const currentOrder = activeOrders.find(o => o.id === orderId);
+
     try {
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, {
@@ -435,6 +436,8 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
           status: 'AVAILABLE'
         });
         alert('¡Felicidades! Pedido marcado como ENTREGADO con éxito.');
+      } else if (nextStatus === 'SHIPPED') {
+        alert('📦 Pedido marcado como Recogido y en Camino.');
       }
     } catch (err) {
       console.error('Error updating order status:', err);
@@ -902,34 +905,55 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
         ) : (
           <>
             {/* Driver Debt status alert */}
-            {selectedDriver && unpaidDeliveredOrders.length > 0 && (
-              <div className={`p-4 rounded-2xl border flex flex-col gap-2 animate-fadeIn ${
-                (activeOrders.length + unpaidDeliveredOrders.length) >= 3 
-                  ? 'bg-rose-50 border-rose-200 text-rose-900' 
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}>
-                <div className="flex items-center gap-2 font-extrabold text-xs uppercase tracking-wide">
-                  <span className="text-base">⚠️</span> 
-                  {(activeOrders.length + unpaidDeliveredOrders.length) >= 3 ? 'LÍMITE ALCANZADO (3/3 PEDIDOS)' : 'LIQUIDACIÓN PENDIENTE'}
-                </div>
-                <p className="text-xs">
-                  Tienes <strong className="font-black">{unpaidDeliveredOrders.length}</strong> {unpaidDeliveredOrders.length === 1 ? 'pedido entregado' : 'pedidos entregados'} pendientes en caja y <strong className="font-black">{activeOrders.length}</strong> {activeOrders.length === 1 ? 'pedido asignado' : 'pedidos asignados'}.
-                </p>
-                <div className="flex justify-between items-center mt-1 pt-2 border-t border-dashed border-current text-xs">
-                  <span className="font-semibold">Monto total a liquidar en caja:</span>
-                  <span className="font-black text-sm">${unpaidDeliveredOrders.reduce((sum, o) => sum + o.total, 0)}</span>
-                </div>
-                {(activeOrders.length + unpaidDeliveredOrders.length) >= 3 ? (
-                  <p className="text-[10px] text-rose-600 font-extrabold mt-1">
-                    ❌ Límite alcanzado (3/3). No puedes tomar más pedidos hasta liquidar en caja o entregar los asignados.
+            {selectedDriver && (() => {
+              const unpaidActiveOrders = activeOrders.filter(o => o.cashierPaid !== true);
+              const paidActiveOrders = activeOrders.filter(o => o.cashierPaid === true);
+              const totalDriverCount = unpaidActiveOrders.length + unpaidDeliveredOrders.length;
+              const totalDeliveredDebt = unpaidDeliveredOrders.reduce((sum, o) => sum + o.total, 0);
+
+              if (totalDriverCount === 0 && paidActiveOrders.length === 0) return null;
+
+              return (
+                <div className={`p-4 rounded-2xl border flex flex-col gap-2 animate-fadeIn ${
+                  totalDriverCount >= 3 
+                    ? 'bg-rose-50 border-rose-200 text-rose-900' 
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  <div className="flex items-center justify-between font-extrabold text-xs uppercase tracking-wide">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-base">⚠️</span> 
+                      {totalDriverCount >= 3 ? 'LÍMITE ALCANZADO (3/3 PEDIDOS)' : 'ESTADO DE CARGA Y PAGOS'}
+                    </span>
+                    <span className="bg-white/80 px-2 py-0.5 rounded-full font-mono text-[11px] font-black border border-current">
+                      Carga: {totalDriverCount}/3
+                    </span>
+                  </div>
+                  <p className="text-xs">
+                    Carga sin pagar: <strong className="font-black">{unpaidActiveOrders.length}</strong> activo(s) y <strong className="font-black">{unpaidDeliveredOrders.length}</strong> entregado(s).
+                    {paidActiveOrders.length > 0 && (
+                      <span className="text-emerald-700 font-extrabold block mt-0.5">
+                        ✅ {paidActiveOrders.length} pedido(s) activo(s) pagado(s) por adelantado en caja (espacio liberado).
+                      </span>
+                    )}
                   </p>
-                ) : (
-                  <p className="text-[10px] text-amber-700 font-bold mt-1">
-                    💡 Límite: Máximo 3 pedidos combinados (asignados + entregados sin liquidar). Carga actual: {activeOrders.length + unpaidDeliveredOrders.length}/3.
-                  </p>
-                )}
-              </div>
-            )}
+                  {totalDeliveredDebt > 0 && (
+                    <div className="flex justify-between items-center mt-1 pt-2 border-t border-dashed border-current text-xs">
+                      <span className="font-semibold">Monto entregado pendiente de liquidar en caja:</span>
+                      <span className="font-black text-sm">${totalDeliveredDebt}</span>
+                    </div>
+                  )}
+                  {totalDriverCount >= 3 ? (
+                    <p className="text-[10px] text-rose-600 font-extrabold mt-1">
+                      ❌ Límite alcanzado (3/3). Paga a la cajera por adelantado tus pedidos activos o liquida los entregados para liberar espacios.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-amber-700 font-bold mt-1">
+                      💡 Límite: Máximo 3 pedidos pendientes de pago en caja. Al pagar tus pedidos activos a la cajera, se libera espacio al instante.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
             
             {/* Realtime Pop-Up Notification Alert */}
             {showNotification && (
@@ -1054,9 +1078,45 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
                             </div>
                           </div>
 
-                          <div className="border-t border-slate-200 pt-2 mt-2">
-                            <strong className="text-slate-500 block uppercase text-[9px] font-bold">Monto a Cobrar al Cliente</strong>
-                            <span className="font-black text-slate-800 text-sm">${order.total} (Efectivo)</span>
+                          <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between items-center">
+                            <div>
+                              <strong className="text-slate-500 block uppercase text-[9px] font-bold">Monto a Cobrar al Cliente</strong>
+                              <span className="font-black text-slate-800 text-sm">${order.total} (Efectivo)</span>
+                            </div>
+                            <div className="text-right">
+                              <strong className="text-slate-500 block uppercase text-[9px] font-bold">Tu Ganancia</strong>
+                              <span className="font-black text-emerald-600 text-sm">${order.driverPaymentRate ?? 10}</span>
+                            </div>
+                          </div>
+
+                          {/* Cashier Payment Status Info (Exclusive to cashier role) */}
+                          <div className="pt-2 border-t border-slate-200">
+                            {order.cashierPaid ? (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-emerald-800 text-[11px] font-bold flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                                  <span>Pagado a Cajera por Adelantado</span>
+                                </span>
+                                <span className="text-[10px] bg-emerald-600 text-white font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  Espacio Liberado
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-amber-900 text-[11px] font-medium space-y-1">
+                                <div className="font-extrabold text-amber-800 flex items-center justify-between">
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>Pendiente de Pago en Caja</span>
+                                  </span>
+                                  <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded">
+                                    Neto: ${Math.max(0, order.total - (order.driverPaymentRate ?? 10))}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-amber-700 leading-tight">
+                                  💡 Si entregas ${Math.max(0, order.total - (order.driverPaymentRate ?? 10))} en efectivo a la cajera, ella registrará el pago en su pantalla y liberará 1 espacio de tu carga (3/3).
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1064,14 +1124,14 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
                         {order.status === 'ASSIGNED' ? (
                           <button
                             onClick={() => handleUpdateStatus(order.id, 'SHIPPED')}
-                            className="w-full bg-brand-primary hover:bg-brand-primary-hover text-white font-extrabold py-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs animate-pulse"
+                            className="w-full bg-brand-primary hover:bg-brand-primary-hover text-white font-extrabold py-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs animate-pulse cursor-pointer"
                           >
                             <Navigation className="w-4 h-4" /> Marcar: Recogido y En Camino
                           </button>
                         ) : (
                           <button
                             onClick={() => handleUpdateStatus(order.id, 'DELIVERED')}
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                           >
                             <CheckCircle className="w-4 h-4" /> Marcar como ENTREGADO y Cobrado
                           </button>
@@ -1085,56 +1145,65 @@ export default function DriverPortal({ onAudioAlert }: DriverPortalProps) {
 
             {/* Nearby / Available orders to take list */}
             <div>
-              <div className="mb-3">
-                <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center justify-between">
-                  <span>Pedidos para Recoger Disponibles ({availableDeliveries.length})</span>
-                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                    (activeOrders.length + unpaidDeliveredOrders.length) >= 3
-                      ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    Carga: {activeOrders.length + unpaidDeliveredOrders.length}/3
-                  </span>
-                </h3>
-                {selectedDriver.city && (
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500 mt-1">
-                    <MapPin className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-                    <span>Ciudad activa: <strong className="text-slate-800">{selectedDriver.city}</strong> (Solo ves pedidos de tu ciudad)</span>
-                  </div>
-                )}
-              </div>
+              {(() => {
+                const unpaidActiveOrders = activeOrders.filter(o => o.cashierPaid !== true);
+                const totalDriverCount = unpaidActiveOrders.length + unpaidDeliveredOrders.length;
+                const isLimitReached = totalDriverCount >= 3;
 
-              {availableDeliveries.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-100 p-6 text-center text-slate-400 text-xs">
-                  <RefreshCw className="w-5 h-5 mx-auto mb-2 text-slate-300 animate-spin" />
-                  Esperando que los restaurantes {selectedDriver.city ? `de ${selectedDriver.city}` : ''} terminen de preparar pedidos...
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {availableDeliveries.map((order) => {
-                    const isLimitReached = (activeOrders.length + unpaidDeliveredOrders.length) >= 3;
-                    return (
-                      <div key={order.id} className="bg-white rounded-xl border border-slate-200 p-3.5 flex justify-between items-center gap-4">
-                        <div className="flex-1">
-                          <h5 className="font-bold text-slate-800 text-sm">{order.restaurantName}</h5>
-                          <p className="text-slate-400 text-[11px] mt-0.5 line-clamp-1">{(order as any).deliveryAddress || 'Domicilio'}</p>
-                          <span className="text-[10px] text-emerald-600 font-extrabold mt-1 block">Pago: ${order.driverPaymentRate ?? 10}</span>
+                return (
+                  <>
+                    <div className="mb-3">
+                      <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center justify-between">
+                        <span>Pedidos para Recoger Disponibles ({availableDeliveries.length})</span>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          isLimitReached
+                            ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          Carga: {totalDriverCount}/3
+                        </span>
+                      </h3>
+                      {selectedDriver.city && (
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500 mt-1">
+                          <MapPin className="w-3.5 h-3.5 text-brand-primary shrink-0" />
+                          <span>Ciudad activa: <strong className="text-slate-800">{selectedDriver.city}</strong> (Solo ves pedidos de tu ciudad)</span>
                         </div>
-                        <button
-                          onClick={() => handleAcceptDelivery(order.id)}
-                          className={`font-extrabold px-3 py-1.5 rounded-lg text-xs transition shrink-0 shadow-xs cursor-pointer ${
-                            isLimitReached
-                              ? 'bg-slate-200 text-slate-400 hover:bg-slate-300'
-                              : 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                          }`}
-                        >
-                          {isLimitReached ? 'Límite 3/3' : 'Tomar'}
-                        </button>
+                      )}
+                    </div>
+
+                    {availableDeliveries.length === 0 ? (
+                      <div className="bg-white rounded-2xl border border-slate-100 p-6 text-center text-slate-400 text-xs">
+                        <RefreshCw className="w-5 h-5 mx-auto mb-2 text-slate-300 animate-spin" />
+                        Esperando que los restaurantes {selectedDriver.city ? `de ${selectedDriver.city}` : ''} terminen de preparar pedidos...
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    ) : (
+                      <div className="space-y-3">
+                        {availableDeliveries.map((order) => {
+                          return (
+                            <div key={order.id} className="bg-white rounded-xl border border-slate-200 p-3.5 flex justify-between items-center gap-4">
+                              <div className="flex-1">
+                                <h5 className="font-bold text-slate-800 text-sm">{order.restaurantName}</h5>
+                                <p className="text-slate-400 text-[11px] mt-0.5 line-clamp-1">{(order as any).deliveryAddress || 'Domicilio'}</p>
+                                <span className="text-[10px] text-emerald-600 font-extrabold mt-1 block">Pago: ${order.driverPaymentRate ?? 10}</span>
+                              </div>
+                              <button
+                                onClick={() => handleAcceptDelivery(order.id)}
+                                className={`font-extrabold px-3 py-1.5 rounded-lg text-xs transition shrink-0 shadow-xs cursor-pointer ${
+                                  isLimitReached
+                                    ? 'bg-slate-200 text-slate-400 hover:bg-slate-300'
+                                    : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                }`}
+                              >
+                                {isLimitReached ? 'Límite 3/3' : 'Tomar'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </>
         )}

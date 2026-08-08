@@ -66,8 +66,9 @@ export async function sendDriverNewOrderEmail(order: Order, db: Firestore): Prom
 
     // 3. Filter drivers STRICTLY matching the same city as the restaurant
     const eligibleDrivers = driversList.filter((driver) => {
-      // Must not be suspended
-      if (driver.status === 'SUSPENDED') return false;
+      // Must not be suspended or offline (disconnected)
+      if (driver.status === 'SUSPENDED' || driver.status === 'OFFLINE') return false;
+      if (driver.status && driver.status !== 'AVAILABLE' && driver.status !== 'DELIVERING') return false;
       if (!driver.email || !driver.email.includes('@')) return false;
 
       // If restaurant has no city defined, drivers without city or with 'todas' match

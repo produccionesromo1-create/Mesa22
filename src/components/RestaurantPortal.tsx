@@ -1325,7 +1325,7 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
     if (initialAmtStr === null) return;
     const initialAmount = parseFloat(initialAmtStr) || 0;
 
-    const cashierName = loggedInEmployee?.name || userProfile?.name || 'andrea';
+    const cashierName = loggedInEmployee?.name || userProfile?.name || 'Propietario';
 
     const newSession: Omit<CashRegisterSession, 'id'> = {
       restaurantId: selectedRest.id,
@@ -1511,7 +1511,7 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
           </div>
 
           <div class="details">
-            <div><strong>Cajera(o):</strong> ${loggedInEmployee?.name || activeCashSession?.openedBy || 'Caja'}</div>
+            <div><strong>Cajera(o):</strong> ${loggedInEmployee?.name || activeCashSession?.openedBy || userProfile?.name || 'Propietario'}</div>
             <div><strong>Concepto:</strong> ${t.reason}</div>
             <div><strong>Método de Pago:</strong> ${t.paymentMethod || (t.type === 'IN' ? 'EFECTIVO' : 'EGRESO')}</div>
             <div><strong>Tipo Transacción:</strong> ${t.type === 'IN' ? 'INGRESO DE VENTA' : 'EGRESO / RETIRO DE CAJA'}</div>
@@ -2823,7 +2823,7 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
         </div>
 
         {/* Cash Register State Control */}
-        {loggedInEmployee?.role === 'cajero' && (
+        {(!loggedInEmployee || loggedInEmployee.role === 'cajero') && (
           <div className="flex items-center gap-3 shrink-0">
             {activeCashSession ? (
               <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-2xl">
@@ -4389,7 +4389,10 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                         const totalDebt = data.unpaid.reduce((sum, o) => sum + o.total, 0);
                         const totalDriverPay = data.unpaid.reduce((sum, o) => sum + getDriverPaymentRate(o), 0);
                         const netSettleAmount = data.unpaid.reduce((sum, o) => sum + Math.max(0, o.total - getDriverPaymentRate(o)), 0);
-                        const isBlocked = data.unpaid.length >= 3;
+                        
+                        const unpaidActive = data.active.filter(o => o.cashierPaid !== true);
+                        const totalUnpaidCount = unpaidActive.length + data.unpaid.length;
+                        const isBlocked = totalUnpaidCount >= 3;
 
                         return (
                           <div 
@@ -4397,7 +4400,7 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                             className={`p-5 rounded-2xl border flex flex-col justify-between space-y-4 transition ${
                               isBlocked 
                                 ? 'bg-rose-950/30 border-rose-900/50' 
-                                : data.unpaid.length > 0
+                                : totalUnpaidCount > 0
                                 ? 'bg-amber-950/25 border-amber-900/40'
                                 : 'bg-slate-950/40 border-slate-800'
                             }`}
@@ -4425,14 +4428,15 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                                       En Ruta ({data.active.length})
                                     </span>
                                   )}
-                                  {data.unpaid.length > 0 && (
-                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                                      isBlocked ? 'bg-rose-500 text-white animate-pulse font-extrabold px-2 py-1' : 'bg-amber-500/25 text-amber-400'
-                                    }`}>
-                                      {isBlocked ? 'Bloqueado por Adeudo' : 'Deuda Pendiente'}
+                                  {isBlocked ? (
+                                    <span className="bg-rose-500 text-white animate-pulse font-extrabold px-2 py-1 text-[9px] rounded uppercase tracking-wider">
+                                      Bloqueado (3/3 Sin Pagar)
                                     </span>
-                                  )}
-                                  {data.active.length === 0 && data.unpaid.length === 0 && (
+                                  ) : totalUnpaidCount > 0 ? (
+                                    <span className="bg-amber-500/25 text-amber-400 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                      Carga: {totalUnpaidCount}/3 sin pagar
+                                    </span>
+                                  ) : (
                                     <span className="bg-emerald-500/15 text-emerald-400 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
                                       Al corriente
                                     </span>
@@ -4445,46 +4449,99 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                                 <div className="space-y-1.5">
                                   <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">Entregas Activas (En camino)</span>
                                   <div className="space-y-2 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-[11px]">
-                                    {data.active.map(o => (
-                                      <div key={o.id} className="space-y-2 pb-2 last:pb-0 border-b border-slate-800/45 last:border-0">
-                                        <div className="flex justify-between items-start text-slate-300">
-                                          <div>
-                                            <span className="font-bold">#{o.id.slice(0, 5).toUpperCase()} - {o.customerName}</span>
-                                            {o.driverPhone && (
-                                              <p className="text-[10px] text-orange-400 font-bold flex items-center gap-1 mt-0.5 font-mono">
-                                                <Phone className="w-2.5 h-2.5" /> Tel Repartidor: <a href={`tel:${o.driverPhone}`} className="underline">{o.driverPhone}</a>
-                                              </p>
-                                            )}
-                                          </div>
-                                          <div className="text-right">
-                                            <span className="font-bold text-orange-400 uppercase text-[9px] block">
-                                              {o.status === 'SHIPPED' ? 'En ruta' : 'Asignado'}
-                                            </span>
-                                          </div>
-                                        </div>
+                                    {data.active.map(o => {
+                                      const driverRate = getDriverPaymentRate(o);
+                                      const netToCashier = Math.max(0, o.total - driverRate);
 
-                                        {/* Dishes list */}
-                                        <div className="pl-2 border-l border-orange-500/40 space-y-0.5 text-slate-400 text-[10px]">
-                                          {o.items.map((it, idx) => (
-                                            <div key={idx} className="flex justify-between">
-                                              <span>{it.quantity}x {it.name}</span>
-                                              <span>${it.price * it.quantity}</span>
+                                      return (
+                                        <div key={o.id} className="space-y-2 pb-2 last:pb-0 border-b border-slate-800/45 last:border-0">
+                                          <div className="flex justify-between items-start text-slate-300">
+                                            <div>
+                                              <span className="font-bold">#{o.id.slice(0, 5).toUpperCase()} - {o.customerName}</span>
+                                              {o.driverPhone && (
+                                                <p className="text-[10px] text-orange-400 font-bold flex items-center gap-1 mt-0.5 font-mono">
+                                                  <Phone className="w-2.5 h-2.5" /> Tel Repartidor: <a href={`tel:${o.driverPhone}`} className="underline">{o.driverPhone}</a>
+                                                </p>
+                                              )}
                                             </div>
-                                          ))}
-                                        </div>
+                                            <div className="text-right">
+                                              <span className="font-bold text-orange-400 uppercase text-[9px] block">
+                                                {o.status === 'SHIPPED' ? 'En ruta' : 'Asignado'}
+                                              </span>
+                                              {o.cashierPaid ? (
+                                                <span className="bg-emerald-500/20 text-emerald-400 text-[9px] font-black px-1.5 py-0.5 rounded border border-emerald-500/30 uppercase tracking-wider block mt-0.5 font-mono">
+                                                  ✅ Pagado Adelantado
+                                                </span>
+                                              ) : (
+                                                <span className="bg-amber-500/20 text-amber-400 text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-500/30 uppercase tracking-wider block mt-0.5 font-mono">
+                                                  ⏳ Pendiente Pago Caja
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
 
-                                        {/* Action: Quitar asignación */}
-                                        <div className="flex justify-end pt-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleUnassignDriver(o)}
-                                            className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 border border-rose-500/40 text-[10px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 uppercase tracking-wider shadow-xs"
-                                          >
-                                            <UserMinus className="w-3 h-3 text-rose-400" /> Quitar asignación
-                                          </button>
+                                          {/* Dishes list */}
+                                          <div className="pl-2 border-l border-orange-500/40 space-y-0.5 text-slate-400 text-[10px]">
+                                            {o.items.map((it, idx) => (
+                                              <div key={idx} className="flex justify-between">
+                                                <span>{it.quantity}x {it.name}</span>
+                                                <span>${it.price * it.quantity}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+
+                                          {/* Upfront payment action / status for cashier */}
+                                          <div className="flex justify-between items-center pt-1 gap-2">
+                                            {!o.cashierPaid && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (!activeCashSession) {
+                                                    alert('⚠️ Error de Caja: La caja está cerrada. Debe abrir la caja antes de registrar cobros.');
+                                                    return;
+                                                  }
+                                                  if (window.confirm(`¿Registrar COBRO POR ADELANTADO de $${netToCashier} (Total: $${o.total} - Ganancia Repartidor: $${driverRate}) al repartidor ${data.driverName} para el pedido #${o.id.slice(0, 5)}?\n\nEsto liberará 1 espacio en su capacidad de carga de 3 pedidos.`)) {
+                                                    try {
+                                                      await updateDoc(doc(db, 'orders', o.id), {
+                                                        cashierPaid: true,
+                                                        cashierPaidAt: Date.now(),
+                                                        paidUpfront: true
+                                                      });
+                                                      const sessionRef = doc(db, 'cashSessions', activeCashSession.id);
+                                                      const updatedTrans = [
+                                                        ...activeCashSession.transactions,
+                                                        {
+                                                          type: 'IN' as const,
+                                                          amount: netToCashier,
+                                                          reason: `Cobro Adelantado Repartidor (${data.driverName}) - Pedido #${o.id.slice(0, 5)} (Total: $${o.total} - Ganancia: $${driverRate})`,
+                                                          timestamp: Date.now(),
+                                                          paymentMethod: 'EFECTIVO'
+                                                        }
+                                                      ];
+                                                      await updateDoc(sessionRef, { transactions: updatedTrans });
+                                                      alert(`¡Cobro por adelantado de $${netToCashier} registrado con éxito! Se liberó 1 espacio de carga para ${data.driverName}.`);
+                                                    } catch (err) {
+                                                      console.error('Error charging upfront driver payment:', err);
+                                                      alert('Error al registrar cobro por adelantado.');
+                                                    }
+                                                  }
+                                                }}
+                                                className="bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 uppercase tracking-wider"
+                                              >
+                                                💵 Cobrar por Adelantado (${netToCashier})
+                                              </button>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUnassignDriver(o)}
+                                              className="bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 border border-rose-500/40 text-[10px] font-bold px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 uppercase tracking-wider shadow-xs ml-auto"
+                                            >
+                                              <UserMinus className="w-3 h-3 text-rose-400" /> Quitar asignación
+                                            </button>
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}
