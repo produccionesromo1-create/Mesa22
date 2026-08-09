@@ -119,6 +119,9 @@ export interface Order {
   driverPhone?: string;
   driverPaymentRate?: number;
   kitchenNotes?: string;
+  cancelledByCustomer?: boolean;
+  cancelReason?: string;
+  kitchenAcknowledged?: boolean;
   cashierPaid?: boolean;
   cashierPaidAt?: number;
   // Waiter & Billing workflow fields

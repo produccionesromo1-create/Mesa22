@@ -52,7 +52,8 @@ import {
   Trophy,
   Award,
   Edit3,
-  ChevronDown
+  ChevronDown,
+  XCircle
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -201,6 +202,40 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
   const [custAddress, setCustAddress] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
   const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
+
+  const handleCustomerCancelOrder = async () => {
+    if (!placedOrder || !placedOrder.id) return;
+
+    if (!window.confirm('¿Estás seguro de que deseas cancelar este pedido?')) {
+      return;
+    }
+
+    setIsCancellingOrder(true);
+    try {
+      const orderRef = doc(db, 'orders', placedOrder.id);
+      await updateDoc(orderRef, {
+        status: 'CANCELLED',
+        cancelledByCustomer: true,
+        cancelReason: 'Cancelado por el cliente',
+        updatedAt: Date.now()
+      });
+      
+      setPlacedOrder(prev => prev ? {
+        ...prev,
+        status: 'CANCELLED',
+        cancelReason: 'Cancelado por el cliente',
+        cancelledByCustomer: true
+      } : null);
+
+      alert('Tu pedido ha sido cancelado con éxito.');
+    } catch (err) {
+      console.error("Error al cancelar el pedido:", err);
+      alert("Hubo un error al cancelar tu pedido. Por favor intenta nuevamente.");
+    } finally {
+      setIsCancellingOrder(false);
+    }
+  };
 
   // Customer notifications list and listener for live updates
   const [customerToasts, setCustomerToasts] = useState<{ id: string; title: string; message: string; type: string }[]>([]);
@@ -2749,6 +2784,24 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
                     </div>
                   </div>
 
+                  {/* Botón para cancelar pedido (Oculto cuando en cocina lo marquen como LISTO o superior) */}
+                  {!['READY', 'ASSIGNED', 'SHIPPED', 'DELIVERED', 'CANCELLED'].includes(placedOrder.status) && (
+                    <button
+                      type="button"
+                      onClick={handleCustomerCancelOrder}
+                      disabled={isCancellingOrder}
+                      className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 mb-3 uppercase tracking-wider text-xs"
+                    >
+                      {isCancellingOrder ? (
+                        <>Procesando cancelación...</>
+                      ) : (
+                        <>
+                          <XCircle className="w-4.5 h-4.5" /> Cancelar Pedido
+                        </>
+                      )}
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setIsCartOpen(false);
@@ -2756,7 +2809,7 @@ export default function CustomerPortal({ onNotifyOrderPlaced }: CustomerPortalPr
                       setPlacedOrder(null);
                       // Mantener el restaurante seleccionado para volver a su menú directamente
                     }}
-                    className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-md hover:bg-brand-primary-hover transition"
+                    className="w-full bg-brand-primary text-white font-bold py-3 rounded-xl shadow-md hover:bg-brand-primary-hover transition cursor-pointer"
                   >
                     Volver al Inicio
                   </button>

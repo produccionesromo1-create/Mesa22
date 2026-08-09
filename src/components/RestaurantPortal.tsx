@@ -1883,6 +1883,20 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
     }
   };
 
+  // Kitchen Acknowledge customer cancellation handler
+  const handleKitchenAcknowledgeCancellation = async (orderId: string) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        kitchenAcknowledged: true,
+        updatedAt: Date.now()
+      });
+    } catch (err) {
+      console.error('Error al confirmar cancelación en cocina:', err);
+      alert('Error al procesar la confirmación.');
+    }
+  };
+
   // Unassign driver from delivery order
   const handleUnassignDriver = async (order: Order) => {
     if (!order || !order.id) return;
@@ -5730,11 +5744,11 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               <p className="text-slate-500 text-xs mt-0.5">Control de órdenes y comanda digital en tiempo real</p>
             </div>
             <span className="bg-orange-100 text-brand-primary text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider">
-              {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'].includes(o.status)).length} órdenes activas
+              {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'].includes(o.status) || (o.status === 'CANCELLED' && !o.kitchenAcknowledged)).length} órdenes activas
             </span>
           </div>
 
-          {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'ASSIGNED'].includes(o.status)).length === 0 ? (
+          {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'ASSIGNED'].includes(o.status) || (o.status === 'CANCELLED' && !o.kitchenAcknowledged)).length === 0 ? (
             <div className="bg-white rounded-3xl border border-slate-150 p-16 text-center shadow-2xs max-w-lg mx-auto">
               <ChefHat className="w-16 h-16 text-slate-300 mx-auto mb-4 animate-bounce" />
               <h3 className="font-black text-slate-800 text-lg">Cocina al día</h3>
@@ -5742,56 +5756,64 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'ASSIGNED'].includes(o.status)).map((order) => {
+              {orders.filter(o => ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'ASSIGNED'].includes(o.status) || (o.status === 'CANCELLED' && !o.kitchenAcknowledged)).map((order) => {
                 const totalItems = order.items.reduce((s, i) => s + i.quantity, 0);
+                const isCancelled = order.status === 'CANCELLED';
+
                 return (
                   <div 
                     key={order.id} 
-                    className={`bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col justify-between transition-all ${
-                      order.deliveryType === 'DELIVERY'
-                        ? 'border-orange-500 ring-2 ring-orange-500/50 bg-orange-50/10'
-                        : order.status === 'PENDING' ? 'border-amber-400 ring-2 ring-amber-400/50' : 'border-slate-200'
+                    className={`rounded-3xl border shadow-sm overflow-hidden flex flex-col justify-between transition-all ${
+                      isCancelled
+                        ? 'bg-rose-600 border-4 border-rose-800 text-white shadow-2xl ring-4 ring-rose-500/50 animate-pulse'
+                        : order.deliveryType === 'DELIVERY'
+                          ? 'bg-white border-orange-500 ring-2 ring-orange-500/50 bg-orange-50/10'
+                          : order.status === 'PENDING' ? 'bg-white border-amber-400 ring-2 ring-amber-400/50' : 'bg-white border-slate-200'
                     }`}
                   >
                     {/* Order kitchen card head */}
-                    <div className={`p-5 border-b border-slate-100 flex justify-between items-start ${
-                      order.deliveryType === 'DELIVERY' ? 'bg-orange-100/70' : 'bg-slate-50'
+                    <div className={`p-5 border-b flex justify-between items-start ${
+                      isCancelled
+                        ? 'bg-rose-700/90 border-rose-800 text-white'
+                        : order.deliveryType === 'DELIVERY' ? 'bg-orange-100/70 border-slate-100' : 'bg-slate-50 border-slate-100'
                     }`}>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-black text-slate-600">
+                          <span className={`font-mono text-xs font-black ${isCancelled ? 'text-rose-100' : 'text-slate-600'}`}>
                             #{order.id.slice(0, 5).toUpperCase()}
                           </span>
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${
-                            order.deliveryType === 'PICKUP' ? (
-                              ['PENDING', 'CONFIRMED'].includes(order.status) ? 'bg-amber-100 text-amber-800' :
-                              order.status === 'PREPARING' ? 'bg-orange-100 text-orange-800' :
-                              'bg-emerald-100 text-emerald-800'
-                            ) : (
-                              order.status === 'PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                            )
+                            isCancelled
+                              ? 'bg-red-900 text-white border border-red-400 animate-bounce'
+                              : order.deliveryType === 'PICKUP' ? (
+                                  ['PENDING', 'CONFIRMED'].includes(order.status) ? 'bg-amber-100 text-amber-800' :
+                                  order.status === 'PREPARING' ? 'bg-orange-100 text-orange-800' :
+                                  'bg-emerald-100 text-emerald-800'
+                                ) : (
+                                  order.status === 'PENDING' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                                )
                           }`}>
-                            {order.deliveryType === 'PICKUP' ? (
+                            {isCancelled ? '⚠️ Pedido cancelado' : order.deliveryType === 'PICKUP' ? (
                               ['PENDING', 'CONFIRMED'].includes(order.status) ? 'Recibido' :
                               order.status === 'PREPARING' ? 'Cocinando' :
                               order.status === 'READY' ? 'Listo' : order.status
                             ) : order.status}
                           </span>
                         </div>
-                        <h4 className="font-black text-slate-800 text-base mt-2 flex items-center gap-1.5">
+                        <h4 className={`font-black text-base mt-2 flex items-center gap-1.5 ${isCancelled ? 'text-white' : 'text-slate-800'}`}>
                           {order.customerName} {order.tableName ? `[${order.tableName}]` : ''}
                         </h4>
-                        <span className="text-slate-400 text-xs block mt-0.5">
+                        <span className={`text-xs block mt-0.5 ${isCancelled ? 'text-rose-100' : 'text-slate-400'}`}>
                           Consumo: {order.deliveryType === 'DINE_IN' ? '🍽️ En Mesa' : order.deliveryType === 'PICKUP' ? '🛍️ Para Llevar' : '🏍️ Domicilio'}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="text-[10px] text-slate-400 font-medium block">Recibido</span>
-                        <span className="text-slate-700 font-bold text-xs">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span className={`text-[10px] font-medium block ${isCancelled ? 'text-rose-200' : 'text-slate-400'}`}>Recibido</span>
+                        <span className={`font-bold text-xs ${isCancelled ? 'text-white' : 'text-slate-700'}`}>{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                       </div>
                     </div>
 
-                    {order.deliveryType === 'DELIVERY' && (
+                    {order.deliveryType === 'DELIVERY' && !isCancelled && (
                       <div className="mx-5 mt-4 p-3 bg-orange-100/40 rounded-2xl border border-orange-200/50 text-xs text-slate-700 space-y-1 animate-fadeIn">
                         <p className="font-extrabold text-orange-800 text-[10px] uppercase tracking-wider flex items-center gap-1">
                           🏍️ PEDIDO A DOMICILIO
@@ -5830,20 +5852,20 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                     {/* Products list for chefs */}
                     <div className="p-5 flex-1 space-y-3">
                       {order.items.map((it, k) => (
-                        <div key={k} className="flex justify-between items-start text-sm border-b border-dashed border-slate-100 pb-2">
+                        <div key={k} className={`flex justify-between items-start text-sm border-b border-dashed pb-2 ${isCancelled ? 'border-rose-400/60' : 'border-slate-100'}`}>
                           <div>
-                            <span className="font-black text-brand-primary mr-2">{it.quantity}x</span>
-                            <span className="font-bold text-slate-800">{it.name}</span>
+                            <span className={`font-black mr-2 ${isCancelled ? 'text-amber-300' : 'text-brand-primary'}`}>{it.quantity}x</span>
+                            <span className={`font-bold ${isCancelled ? 'text-white' : 'text-slate-800'}`}>{it.name}</span>
                             {it.selectedVariant && (
-                              <span className="block text-xs text-slate-400 font-semibold mt-0.5">Opción: {it.selectedVariant}</span>
+                              <span className={`block text-xs font-semibold mt-0.5 ${isCancelled ? 'text-rose-100' : 'text-slate-400'}`}>Opción: {it.selectedVariant}</span>
                             )}
                             {it.selectedExtras && it.selectedExtras.length > 0 && (
-                              <span className="block text-xs text-brand-primary font-medium mt-0.5">
+                              <span className={`block text-xs font-medium mt-0.5 ${isCancelled ? 'text-amber-200' : 'text-brand-primary'}`}>
                                 Extras: {it.selectedExtras.map(e => e.name).join(', ')}
                               </span>
                             )}
                             {it.notes && (
-                              <span className="block text-xs text-rose-600 bg-rose-50 p-1.5 rounded-lg border border-rose-100 mt-1 font-mono">
+                              <span className={`block text-xs p-1.5 rounded-lg border mt-1 font-mono ${isCancelled ? 'text-white bg-rose-800/80 border-rose-400' : 'text-rose-600 bg-rose-50 border-rose-100'}`}>
                                 Nota: "{it.notes}"
                               </span>
                             )}
@@ -5853,7 +5875,21 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                     </div>
 
                     {/* Kitchen actions */}
-                    <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
+                    {isCancelled ? (
+                      <div className="p-5 bg-rose-900/90 border-t border-rose-800 flex flex-col gap-2">
+                        <p className="text-xs font-extrabold text-white text-center mb-1 uppercase tracking-wider">
+                          ⚠️ Pedido cancelado
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleKitchenAcknowledgeCancellation(order.id)}
+                          className="w-full bg-slate-900 hover:bg-black text-white font-black py-3.5 px-4 rounded-2xl text-sm shadow-xl transition cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider border border-slate-700"
+                        >
+                          <CheckCircle className="w-5 h-5 text-emerald-400" /> De acuerdo
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
                       <div className="flex gap-2">
                         <button
                           onClick={() => handlePrintComanda(order)}
@@ -5963,8 +5999,9 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                         )}
                       </div>
                     </div>
-                  </div>
-                );
+                  )}
+                </div>
+              );
               })}
             </div>
           )}
