@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { 
   auth, 
@@ -24,6 +24,7 @@ import { compressImageFile } from '../utils/imageUtils';
 import { 
   Restaurant, 
   Product, 
+  ProductModifier,
   Order, 
   Ingredient, 
   Supplier, 
@@ -82,7 +83,13 @@ import {
   CupSoda,
   Phone,
   UserMinus,
-  Upload
+  Upload,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
+  Folder,
+  FolderOpen,
+  Tag
 } from 'lucide-react';
 
 interface RestaurantPortalProps {
@@ -325,8 +332,7 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState('');
   const [newProdImage, setNewProdImage] = useState('');
-  const [newProdCategory, setNewProdCategory] = useState('Especialidades');
-  const [newProdType, setNewProdType] = useState<'FOOD' | 'DRINK'>('FOOD');
+  const [newProdCategory, setNewProdCategory] = useState('');
   const [newProdDescription, setNewProdDescription] = useState('');
   const [prodError, setProdError] = useState('');
   const [prodSuccess, setProdSuccess] = useState('');
@@ -336,15 +342,35 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
   const [editProdName, setEditProdName] = useState('');
   const [editProdPrice, setEditProdPrice] = useState('');
   const [editProdImage, setEditProdImage] = useState('');
-  const [editProdCategory, setEditProdCategory] = useState('Especialidades');
-  const [editProdType, setEditProdType] = useState<'FOOD' | 'DRINK'>('FOOD');
+  const [editProdCategory, setEditProdCategory] = useState('');
   const [editProdDescription, setEditProdDescription] = useState('');
   const [editProdError, setEditProdError] = useState('');
   const [editProdSuccess, setEditProdSuccess] = useState('');
 
-  // Menu / Product Classification Filters
-  const [posTypeFilter, setPosTypeFilter] = useState<'ALL' | 'FOOD' | 'DRINK'>('ALL');
-  const [catalogTypeFilter, setCatalogTypeFilter] = useState<'ALL' | 'FOOD' | 'DRINK'>('ALL');
+  // Custom Categories Management States
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategoryOldName, setEditingCategoryOldName] = useState<string | null>(null);
+  const [editingCategoryNewName, setEditingCategoryNewName] = useState('');
+  const [categoryActionMessage, setCategoryActionMessage] = useState('');
+
+  // Modifiers States (Creation, Edit & Quick Management)
+  const [newProdModifiers, setNewProdModifiers] = useState<ProductModifier[]>([]);
+  const [newModName, setNewModName] = useState('');
+  const [newModPrice, setNewModPrice] = useState('');
+
+  const [editProdModifiers, setEditProdModifiers] = useState<ProductModifier[]>([]);
+  const [editModName, setEditModName] = useState('');
+  const [editModPrice, setEditModPrice] = useState('');
+
+  const [managingModifiersProduct, setManagingModifiersProduct] = useState<Product | null>(null);
+  const [quickModName, setQuickModName] = useState('');
+  const [quickModPrice, setQuickModPrice] = useState('');
+
+  // Menu / Product Classification Filters & Accordion States
+  const [posCategoryFilter, setPosCategoryFilter] = useState<string>('ALL');
+  const [posCollapsedCategories, setPosCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>('ALL');
+  const [catalogCollapsedCategories, setCatalogCollapsedCategories] = useState<Record<string, boolean>>({});
 
   // Restaurant Profile Edit States
   const [editRestName, setEditRestName] = useState('');
@@ -408,7 +434,13 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
   const [activeCashSession, setActiveCashSession] = useState<CashRegisterSession | null>(null);
 
   // POS State
-  const [posCart, setPosCart] = useState<{ product: Product; quantity: number; notes?: string }[]>([]);
+  const [posCart, setPosCart] = useState<{
+    id: string;
+    product: Product;
+    quantity: number;
+    notes?: string;
+    selectedExtras?: { name: string; price: number }[];
+  }[]>([]);
   const [posCustomerName, setPosCustomerName] = useState('Cliente POS');
   const [posCustomerPhone, setPosCustomerPhone] = useState('5500000000');
   const [posDeliveryAddress, setPosDeliveryAddress] = useState('');
@@ -421,6 +453,13 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
   const [newTableNameInput, setNewTableNameInput] = useState('');
   const [posNotes, setPosNotes] = useState('');
   const [posSearchQuery, setPosSearchQuery] = useState('');
+
+  // POS Modifiers Modal State (for waiter and cashier to assemble dishes)
+  const [posModalProduct, setPosModalProduct] = useState<Product | null>(null);
+  const [posModalSelectedExtras, setPosModalSelectedExtras] = useState<{ name: string; price: number }[]>([]);
+  const [posModalQuantity, setPosModalQuantity] = useState(1);
+  const [posModalNotes, setPosModalNotes] = useState('');
+  const [editingPosCartItemId, setEditingPosCartItemId] = useState<string | null>(null);
 
   // Sync selectedRest tables
   useEffect(() => {
@@ -1056,6 +1095,101 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
     }
   };
 
+  // Custom Categories for Current Restaurant
+  const currentRestaurantCategories = useMemo(() => {
+    if (selectedRest?.customCategories && selectedRest.customCategories.length > 0) {
+      return selectedRest.customCategories;
+    }
+    const fromProds = Array.from(new Set(products.map(p => p.category?.trim()).filter(Boolean)));
+    return fromProds.length > 0 ? fromProds : ['Entradas', 'Platillos Principales', 'Bebidas', 'Postres'];
+  }, [selectedRest, products]);
+
+  const handleAddCustomCategory = async (catToAdd?: string) => {
+    if (!selectedRest?.id) return;
+    const name = (catToAdd !== undefined ? catToAdd : newCategoryName).trim();
+    if (!name) return;
+
+    if (currentRestaurantCategories.some(c => c.toLowerCase() === name.toLowerCase())) {
+      alert(`La categoría "${name}" ya existe en este restaurante.`);
+      return;
+    }
+
+    const updated = [...currentRestaurantCategories, name];
+    try {
+      await updateDoc(doc(db, 'restaurants', selectedRest.id), {
+        customCategories: updated
+      });
+      setSelectedRest({
+        ...selectedRest,
+        customCategories: updated
+      });
+      setNewCategoryName('');
+      setCategoryActionMessage(`Categoría "${name}" agregada con éxito.`);
+      setTimeout(() => setCategoryActionMessage(''), 3000);
+    } catch (err) {
+      console.error('Error al agregar categoría:', err);
+      alert('Hubo un error al agregar la categoría.');
+    }
+  };
+
+  const handleRenameCustomCategory = async (oldName: string) => {
+    if (!selectedRest?.id) return;
+    const newName = editingCategoryNewName.trim();
+    if (!newName || newName === oldName) {
+      setEditingCategoryOldName(null);
+      return;
+    }
+
+    const updated = currentRestaurantCategories.map(c => c === oldName ? newName : c);
+    try {
+      await updateDoc(doc(db, 'restaurants', selectedRest.id), {
+        customCategories: updated
+      });
+      // Also update any dishes under this category in Firestore!
+      const matchingProds = products.filter(p => (p.category?.trim() || '').toLowerCase() === oldName.toLowerCase());
+      for (const p of matchingProds) {
+        await updateDoc(doc(db, 'products', p.id), {
+          category: newName
+        });
+      }
+      setSelectedRest({
+        ...selectedRest,
+        customCategories: updated
+      });
+      setEditingCategoryOldName(null);
+      setEditingCategoryNewName('');
+      setCategoryActionMessage(`Categoría renombrada a "${newName}".`);
+      setTimeout(() => setCategoryActionMessage(''), 3000);
+    } catch (err) {
+      console.error('Error al renombrar categoría:', err);
+      alert('Error al renombrar la categoría.');
+    }
+  };
+
+  const handleDeleteCustomCategory = async (catToDelete: string) => {
+    if (!selectedRest?.id) return;
+    const count = products.filter(p => (p.category?.trim() || '').toLowerCase() === catToDelete.toLowerCase()).length;
+    if (!confirm(`¿Estás seguro de eliminar la categoría "${catToDelete}"?${count > 0 ? ` (${count} platillo(s) tienen actualmente esta categoría)` : ''}`)) {
+      return;
+    }
+
+    const updated = currentRestaurantCategories.filter(c => c !== catToDelete);
+    try {
+      await updateDoc(doc(db, 'restaurants', selectedRest.id), {
+        customCategories: updated
+      });
+      setSelectedRest({
+        ...selectedRest,
+        customCategories: updated
+      });
+      setCategoryActionMessage(`Categoría "${catToDelete}" eliminada.`);
+      setTimeout(() => setCategoryActionMessage(''), 3000);
+    } catch (err) {
+      console.error('Error al eliminar categoría:', err);
+      alert('Error al eliminar la categoría.');
+    }
+  };
+
   // Menu / Product Operations
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1078,30 +1212,171 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
 
     const defaultImage = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=300';
     const cleanImageUrl = newProdImage.trim() || defaultImage;
+    const assignedCat = (newProdCategory.trim() || currentRestaurantCategories[0] || 'General');
 
     try {
+      // Auto-save category to restaurant customCategories if new
+      if (selectedRest?.id && !currentRestaurantCategories.some(c => c.toLowerCase() === assignedCat.toLowerCase())) {
+        const updatedCats = [...currentRestaurantCategories, assignedCat];
+        await updateDoc(doc(db, 'restaurants', selectedRest.id), {
+          customCategories: updatedCats
+        });
+        setSelectedRest({
+          ...selectedRest,
+          customCategories: updatedCats
+        });
+      }
+
       await addDoc(collection(db, 'products'), {
         restaurantId: selectedRest.id,
         name: newProdName.trim(),
         price: priceVal,
         image: cleanImageUrl,
-        category: newProdType === 'DRINK' ? 'Bebidas' : 'Alimentos',
-        type: newProdType,
+        category: assignedCat,
+        type: 'FOOD',
         description: newProdDescription.trim() || 'Exquisito platillo preparado al momento con los mejores ingredientes.',
         prepTime: 12, // default prep time in minutes
         available: true,
+        modifiers: newProdModifiers,
+        extras: newProdModifiers,
         createdAt: Date.now()
       });
 
-      setProdSuccess(`Platillo "${newProdName}" agregado exitosamente al menú.`);
+      setProdSuccess(`Platillo "${newProdName}" agregado exitosamente a la categoría "${assignedCat}".`);
       setNewProdName('');
       setNewProdPrice('');
       setNewProdImage('');
       setNewProdDescription('');
-      setNewProdType('FOOD');
+      setNewProdModifiers([]);
+      setNewModName('');
+      setNewModPrice('');
     } catch (err) {
       console.error('Error al crear platillo:', err);
       setProdError('Error al guardar el platillo en la base de datos.');
+    }
+  };
+
+  const handleAddModifierToNewProduct = () => {
+    if (!newModName.trim()) return;
+    const priceVal = parseFloat(newModPrice);
+    const finalPrice = isNaN(priceVal) || priceVal < 0 ? 0 : priceVal;
+    const newMod: ProductModifier = {
+      id: `mod_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: newModName.trim(),
+      price: finalPrice,
+      available: true
+    };
+    setNewProdModifiers(prev => [...prev, newMod]);
+    setNewModName('');
+    setNewModPrice('');
+  };
+
+  const handleRemoveModifierFromNewProduct = (id: string) => {
+    setNewProdModifiers(prev => prev.filter(m => m.id !== id));
+  };
+
+  const handleToggleNewModifierAvailability = (id: string) => {
+    setNewProdModifiers(prev => prev.map(m => m.id === id ? { ...m, available: !m.available } : m));
+  };
+
+  const handleAddModifierToEditProduct = () => {
+    if (!editModName.trim()) return;
+    const priceVal = parseFloat(editModPrice);
+    const finalPrice = isNaN(priceVal) || priceVal < 0 ? 0 : priceVal;
+    const newMod: ProductModifier = {
+      id: `mod_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: editModName.trim(),
+      price: finalPrice,
+      available: true
+    };
+    setEditProdModifiers(prev => [...prev, newMod]);
+    setEditModName('');
+    setEditModPrice('');
+  };
+
+  const handleRemoveModifierFromEditProduct = (id: string) => {
+    setEditProdModifiers(prev => prev.filter(m => m.id !== id));
+  };
+
+  const handleToggleEditModifierAvailability = (id: string) => {
+    setEditProdModifiers(prev => prev.map(m => m.id === id ? { ...m, available: !m.available } : m));
+  };
+
+  const handleToggleModifierAvailability = async (productId: string, modIdOrName: string, currentAvailable: boolean) => {
+    const prod = products.find(p => p.id === productId);
+    if (!prod) return;
+    const currentMods: ProductModifier[] = ((prod.modifiers && prod.modifiers.length > 0) ? prod.modifiers : (prod.extras || [])).map((m: any, idx: number) => ({
+      id: m.id || `mod_${idx}`,
+      name: m.name,
+      price: typeof m.price === 'number' ? m.price : 0,
+      available: m.available !== false
+    }));
+    const updated = currentMods.map(m => {
+      if (m.id === modIdOrName || m.name === modIdOrName) {
+        return { ...m, available: !currentAvailable };
+      }
+      return m;
+    });
+    try {
+      await updateDoc(doc(db, 'products', productId), {
+        modifiers: updated,
+        extras: updated
+      });
+      if (managingModifiersProduct && managingModifiersProduct.id === productId) {
+        setManagingModifiersProduct({ ...managingModifiersProduct, modifiers: updated, extras: updated });
+      }
+    } catch (err) {
+      console.error('Error al actualizar disponibilidad de modificador:', err);
+    }
+  };
+
+  const handleAddModifierToQuickProduct = async () => {
+    if (!managingModifiersProduct || !quickModName.trim()) return;
+    const priceVal = parseFloat(quickModPrice);
+    const finalPrice = isNaN(priceVal) || priceVal < 0 ? 0 : priceVal;
+    const currentMods: ProductModifier[] = ((managingModifiersProduct.modifiers && managingModifiersProduct.modifiers.length > 0) ? managingModifiersProduct.modifiers : (managingModifiersProduct.extras || [])).map((m: any, idx: number) => ({
+      id: m.id || `mod_${idx}`,
+      name: m.name,
+      price: typeof m.price === 'number' ? m.price : 0,
+      available: m.available !== false
+    }));
+    const newMod: ProductModifier = {
+      id: `mod_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: quickModName.trim(),
+      price: finalPrice,
+      available: true
+    };
+    const updated = [...currentMods, newMod];
+    try {
+      await updateDoc(doc(db, 'products', managingModifiersProduct.id), {
+        modifiers: updated,
+        extras: updated
+      });
+      setManagingModifiersProduct({ ...managingModifiersProduct, modifiers: updated, extras: updated });
+      setQuickModName('');
+      setQuickModPrice('');
+    } catch (err) {
+      console.error('Error al agregar modificador rápido:', err);
+    }
+  };
+
+  const handleRemoveModifierFromQuickProduct = async (modId: string) => {
+    if (!managingModifiersProduct) return;
+    const currentMods: ProductModifier[] = ((managingModifiersProduct.modifiers && managingModifiersProduct.modifiers.length > 0) ? managingModifiersProduct.modifiers : (managingModifiersProduct.extras || [])).map((m: any, idx: number) => ({
+      id: m.id || `mod_${idx}`,
+      name: m.name,
+      price: typeof m.price === 'number' ? m.price : 0,
+      available: m.available !== false
+    }));
+    const updated = currentMods.filter(m => m.id !== modId && m.name !== modId);
+    try {
+      await updateDoc(doc(db, 'products', managingModifiersProduct.id), {
+        modifiers: updated,
+        extras: updated
+      });
+      setManagingModifiersProduct({ ...managingModifiersProduct, modifiers: updated, extras: updated });
+    } catch (err) {
+      console.error('Error al eliminar modificador rápido:', err);
     }
   };
 
@@ -1129,9 +1404,20 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
     setEditProdName(prod.name);
     setEditProdPrice(prod.price.toString());
     setEditProdImage(prod.image || '');
-    setEditProdCategory(prod.category || 'Especialidades');
-    setEditProdType(prod.type || (prod.category?.toLowerCase().includes('bebida') ? 'DRINK' : 'FOOD'));
+    setEditProdCategory(prod.category || currentRestaurantCategories[0] || 'General');
     setEditProdDescription(prod.description || '');
+    
+    // Initialize modifiers for editing
+    const initialMods: ProductModifier[] = ((prod.modifiers && prod.modifiers.length > 0) ? prod.modifiers : (prod.extras || [])).map((m: any, idx: number) => ({
+      id: m.id || `mod_${idx}_${Date.now()}`,
+      name: m.name,
+      price: typeof m.price === 'number' ? m.price : 0,
+      available: m.available !== false
+    }));
+    setEditProdModifiers(initialMods);
+    setEditModName('');
+    setEditModPrice('');
+
     setEditProdError('');
     setEditProdSuccess('');
   };
@@ -1156,15 +1442,30 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
 
     const defaultImage = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&q=80&w=300';
     const cleanImageUrl = editProdImage.trim() || defaultImage;
+    const assignedCat = (editProdCategory.trim() || currentRestaurantCategories[0] || 'General');
 
     try {
+      // Auto-save category to restaurant customCategories if new
+      if (selectedRest?.id && !currentRestaurantCategories.some(c => c.toLowerCase() === assignedCat.toLowerCase())) {
+        const updatedCats = [...currentRestaurantCategories, assignedCat];
+        await updateDoc(doc(db, 'restaurants', selectedRest.id), {
+          customCategories: updatedCats
+        });
+        setSelectedRest({
+          ...selectedRest,
+          customCategories: updatedCats
+        });
+      }
+
       await updateDoc(doc(db, 'products', editingProduct.id), {
         name: editProdName.trim(),
         price: priceVal,
         image: cleanImageUrl,
-        category: editProdType === 'DRINK' ? 'Bebidas' : 'Alimentos',
-        type: editProdType,
-        description: editProdDescription.trim() || 'Exquisito platillo preparado al momento con los mejores ingredientes.'
+        category: assignedCat,
+        type: 'FOOD',
+        description: editProdDescription.trim() || 'Exquisito platillo preparado al momento con los mejores ingredientes.',
+        modifiers: editProdModifiers,
+        extras: editProdModifiers
       });
 
       setEditProdSuccess('Platillo actualizado exitosamente.');
@@ -1291,22 +1592,45 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
   };
 
   // POS Actions
-  const addToPosCart = (product: Product) => {
-    const existing = posCart.find(i => i.product.id === product.id);
-    if (existing) {
-      setPosCart(posCart.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
+  const addToPosCart = (product: Product, selectedExtras: { name: string; price: number }[] = [], quantity = 1, notes = '', cartItemId?: string) => {
+    if (cartItemId) {
+      setPosCart(posCart.map(i => i.id === cartItemId ? {
+        ...i,
+        quantity,
+        selectedExtras: selectedExtras.length > 0 ? selectedExtras : undefined,
+        notes: notes.trim() ? notes.trim() : undefined
+      } : i));
+      return;
+    }
+
+    const extrasKey = (selectedExtras || []).map(e => `${e.name}:${e.price}`).sort().join('|');
+    const existingIndex = posCart.findIndex(i => {
+      const iKey = (i.selectedExtras || []).map(e => `${e.name}:${e.price}`).sort().join('|');
+      return i.product.id === product.id && iKey === extrasKey && (i.notes || '') === (notes.trim() || '');
+    });
+
+    if (existingIndex >= 0) {
+      setPosCart(posCart.map((item, idx) => idx === existingIndex ? { ...item, quantity: item.quantity + quantity } : item));
     } else {
-      setPosCart([...posCart, { product, quantity: 1 }]);
+      const newId = `pos_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      setPosCart([...posCart, {
+        id: newId,
+        product,
+        quantity,
+        selectedExtras: selectedExtras.length > 0 ? selectedExtras : undefined,
+        notes: notes.trim() ? notes.trim() : undefined
+      }]);
     }
   };
 
-  const removeFromPosCart = (productId: string) => {
-    setPosCart(posCart.filter(i => i.product.id !== productId));
+  const removeFromPosCart = (identifier: string) => {
+    setPosCart(posCart.filter(i => (i.id ? i.id !== identifier : i.product.id !== identifier)));
   };
 
-  const updatePosCartQty = (productId: string, change: number) => {
+  const updatePosCartQty = (identifier: string, change: number) => {
     setPosCart(posCart.map(i => {
-      if (i.product.id === productId) {
+      const match = i.id ? i.id === identifier : i.product.id === identifier;
+      if (match) {
         const newQty = i.quantity + change;
         return { ...i, quantity: newQty <= 0 ? 1 : newQty };
       }
@@ -1314,7 +1638,39 @@ export default function RestaurantPortal({ onSuperAdminLogin }: RestaurantPortal
     }).filter(i => i.quantity > 0));
   };
 
-  const posSubtotal = posCart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const openPosModifierModal = (product: Product, existingCartItem?: { id: string; quantity: number; notes?: string; selectedExtras?: { name: string; price: number }[] }) => {
+    setPosModalProduct(product);
+    if (existingCartItem) {
+      setEditingPosCartItemId(existingCartItem.id);
+      setPosModalQuantity(existingCartItem.quantity);
+      setPosModalNotes(existingCartItem.notes || '');
+      setPosModalSelectedExtras(existingCartItem.selectedExtras || []);
+    } else {
+      setEditingPosCartItemId(null);
+      setPosModalQuantity(1);
+      setPosModalNotes('');
+      setPosModalSelectedExtras([]);
+    }
+  };
+
+  const closePosModifierModal = () => {
+    setPosModalProduct(null);
+    setEditingPosCartItemId(null);
+    setPosModalSelectedExtras([]);
+    setPosModalQuantity(1);
+    setPosModalNotes('');
+  };
+
+  const handleSavePosModalProduct = () => {
+    if (!posModalProduct) return;
+    addToPosCart(posModalProduct, posModalSelectedExtras, posModalQuantity, posModalNotes, editingPosCartItemId || undefined);
+    closePosModifierModal();
+  };
+
+  const posSubtotal = posCart.reduce((sum, item) => {
+    const extrasCost = (item.selectedExtras || []).reduce((acc, ex) => acc + (ex.price || 0), 0);
+    return sum + (item.product.price + extrasCost) * item.quantity;
+  }, 0);
   const posDeliveryFee = 0; // Todos los envíos son gratis
   const posTotal = posSubtotal + posDeliveryFee;
 
@@ -1626,7 +1982,9 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
           productId: i.product.id,
           name: i.product.name,
           price: i.product.price,
-          quantity: splitQty
+          quantity: splitQty,
+          selectedExtras: i.selectedExtras,
+          notes: i.notes
         };
       }
       return null;
@@ -1637,7 +1995,10 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
       return;
     }
 
-    const billTotal = selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const billTotal = selectedItems.reduce((sum, item) => {
+      const extrasCost = (item.selectedExtras || []).reduce((s, ex) => s + (ex.price || 0), 0);
+      return sum + (item.price + extrasCost) * item.quantity;
+    }, 0);
 
     setSplitBills([
       ...splitBills,
@@ -1981,13 +2342,19 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               </tr>
             </thead>
             <tbody>
-              ${order.items.map(item => `
+              ${order.items.map(item => {
+                const extrasCost = (item.selectedExtras || []).reduce((s, ex) => s + (ex.price || 0), 0);
+                const itemTotal = (item.price + extrasCost) * item.quantity;
+                const extrasText = item.selectedExtras && item.selectedExtras.length > 0
+                  ? `<div style="font-size: 10px; color: #4338ca;">+ ${item.selectedExtras.map(e => e.name + (e.price > 0 ? ` ($${e.price})` : '')).join(', ')}</div>`
+                  : '';
+                return `
                 <tr>
                   <td>${item.quantity}x</td>
-                  <td>${item.name}</td>
-                  <td style="text-align: right;">$${(item.price * item.quantity).toFixed(2)}</td>
+                  <td>${item.name}${extrasText}</td>
+                  <td style="text-align: right;">$${itemTotal.toFixed(2)}</td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
           <div class="total-section">
@@ -2053,13 +2420,19 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               </tr>
             </thead>
             <tbody>
-              ${split.items.map(item => `
+              ${split.items.map(item => {
+                const extrasCost = (item.selectedExtras || []).reduce((s, ex) => s + (ex.price || 0), 0);
+                const itemTotal = (item.price + extrasCost) * item.quantity;
+                const extrasText = item.selectedExtras && item.selectedExtras.length > 0
+                  ? `<div style="font-size: 10px; color: #4338ca;">+ ${item.selectedExtras.map(e => e.name + (e.price > 0 ? ` ($${e.price})` : '')).join(', ')}</div>`
+                  : '';
+                return `
                 <tr>
                   <td>${item.quantity}x</td>
-                  <td>${item.name}</td>
-                  <td style="text-align: right;">$${(item.price * item.quantity).toFixed(2)}</td>
+                  <td>${item.name}${extrasText}</td>
+                  <td style="text-align: right;">$${itemTotal.toFixed(2)}</td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
           <div class="total-section">
@@ -2512,8 +2885,11 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               ${order.items.map(item => `
                 <tr>
                   <td>${item.quantity}x</td>
-                  <td>${item.name} ${item.selectedVariant ? `(${item.selectedVariant})` : ''}</td>
-                  <td style="text-align: right;">$${item.price * item.quantity}</td>
+                  <td>
+                    ${item.name} ${item.selectedVariant ? `(${item.selectedVariant})` : ''}
+                    ${item.selectedExtras && item.selectedExtras.length > 0 ? `<div style="color: #4f46e5; font-size: 9px; margin-top: 2px;">+ ${item.selectedExtras.map(e => e.name + (e.price > 0 ? ` ($${e.price})` : '')).join(', ')}</div>` : ''}
+                  </td>
+                  <td style="text-align: right;">$${(item.price + ((item.selectedExtras || []).reduce((s, ex) => s + (ex.price || 0), 0))) * item.quantity}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -4852,7 +5228,9 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                         <div key={o.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex justify-between items-center text-xs">
                           <div>
                             <span className="font-mono text-xs text-slate-400 block font-bold">#{o.id.slice(0, 5)} - {o.customerName}</span>
-                            <span className="text-slate-800 font-bold text-sm block">{o.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}</span>
+                            <span className="text-slate-800 font-bold text-sm block">
+                              {o.items.map(i => `${i.quantity}x ${i.name}${i.selectedExtras && i.selectedExtras.length > 0 ? ` (+${i.selectedExtras.map(e => e.name).join(', ')})` : ''}`).join(', ')}
+                            </span>
                           </div>
                           <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded uppercase font-mono">
                             {o.status}
@@ -5268,65 +5646,106 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                 </div>
               </div>
 
-              {/* Classification filter bar */}
-              <div className="flex items-center gap-2 pt-2 border-t border-slate-100 overflow-x-auto pb-0.5">
-                <button
-                  type="button"
-                  onClick={() => setPosTypeFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    posTypeFilter === 'ALL'
-                      ? 'bg-slate-800 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  🍽️ Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPosTypeFilter('FOOD')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    posTypeFilter === 'FOOD'
-                      ? 'bg-amber-500 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-amber-700'
-                  }`}
-                >
-                  <Utensils className="w-3.5 h-3.5" /> 🍲 Solo Alimentos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPosTypeFilter('DRINK')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                    posTypeFilter === 'DRINK'
-                      ? 'bg-sky-500 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-sky-700'
-                  }`}
-                >
-                  <CupSoda className="w-3.5 h-3.5" /> 🥤 Solo Bebidas
-                </button>
+              {/* Custom Categories filter & Accordion Controls */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full">
+                  <button
+                    type="button"
+                    onClick={() => { setPosCategoryFilter('ALL'); setPosCollapsedCategories({}); }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      posCategoryFilter === 'ALL'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🍽️ Todas</span>
+                    <span className="text-[10px] opacity-75 font-mono">({products.length})</span>
+                  </button>
+
+                  {currentRestaurantCategories.map((cat) => {
+                    const count = products.filter(p => (p.category?.trim() || 'General').toLowerCase() === cat.toLowerCase()).length;
+                    const isSelected = posCategoryFilter === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setPosCategoryFilter(cat);
+                          setPosCollapsedCategories(prev => ({ ...prev, [cat]: false }));
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          isSelected
+                            ? 'bg-brand-primary text-white shadow-xs font-black'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>📁 {cat}</span>
+                        {count > 0 && (
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPosCollapsedCategories({})}
+                    title="Desplegar todas las categorías"
+                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
+                  >
+                    <FolderOpen className="w-3 h-3 text-brand-primary" />
+                    <span>Desplegar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allCol: Record<string, boolean> = {};
+                      currentRestaurantCategories.forEach(c => { allCol[c] = true; });
+                      setPosCollapsedCategories(allCol);
+                    }}
+                    title="Replegar todas las categorías"
+                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Folder className="w-3 h-3 text-slate-400" />
+                    <span>Replegar</span>
+                  </button>
+                </div>
               </div>
             </div>
 
             {(() => {
-              const filteredPosProducts = products.filter(prod => {
-                const pType = prod.type || (prod.category?.toLowerCase().includes('bebida') ? 'DRINK' : 'FOOD');
-                if (posTypeFilter === 'FOOD' && pType !== 'FOOD') return false;
-                if (posTypeFilter === 'DRINK' && pType !== 'DRINK') return false;
-                if (posSearchQuery.trim() && !prod.name.toLowerCase().includes(posSearchQuery.toLowerCase())) return false;
+              const categoriesToShow = posCategoryFilter === 'ALL'
+                ? currentRestaurantCategories
+                : currentRestaurantCategories.filter(c => c.toLowerCase() === posCategoryFilter.toLowerCase());
+
+              const unassignedPosProducts = products.filter(p => {
+                const pCat = p.category?.trim() || '';
+                return !currentRestaurantCategories.some(rc => rc.toLowerCase() === pCat.toLowerCase());
+              });
+
+              // Check if query produces results
+              const anyMatches = products.some(p => {
+                if (posCategoryFilter !== 'ALL' && (p.category?.trim() || 'General').toLowerCase() !== posCategoryFilter.toLowerCase()) return false;
+                if (posSearchQuery.trim() && !p.name.toLowerCase().includes(posSearchQuery.toLowerCase())) return false;
                 return true;
               });
 
-              if (filteredPosProducts.length === 0) {
+              if (!anyMatches) {
                 return (
                   <div className="bg-white border border-dashed border-slate-200 rounded-3xl p-12 text-center">
                     <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                     <h4 className="font-bold text-slate-700 text-sm">No se encontraron platillos</h4>
-                    <p className="text-slate-400 text-xs mt-1">Prueba seleccionando otro filtro o borra la búsqueda.</p>
-                    {(posSearchQuery || posTypeFilter !== 'ALL') && (
+                    <p className="text-slate-400 text-xs mt-1">Prueba seleccionando otra categoría o borra la búsqueda.</p>
+                    {(posSearchQuery || posCategoryFilter !== 'ALL') && (
                       <button
-                        onClick={() => { setPosSearchQuery(''); setPosTypeFilter('ALL'); }}
+                        onClick={() => { setPosSearchQuery(''); setPosCategoryFilter('ALL'); setPosCollapsedCategories({}); }}
                         className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
                       >
-                        Mostrar todos
+                        Mostrar todas las categorías
                       </button>
                     )}
                   </div>
@@ -5334,30 +5753,172 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               }
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {filteredPosProducts.map((prod) => {
-                    const isDrink = (prod.type === 'DRINK') || (!prod.type && prod.category?.toLowerCase().includes('bebida'));
+                <div className="space-y-4">
+                  {categoriesToShow.map((cat) => {
+                    const catProds = products.filter(p => {
+                      if ((p.category?.trim() || 'General').toLowerCase() !== cat.toLowerCase()) return false;
+                      if (posSearchQuery.trim() && !p.name.toLowerCase().includes(posSearchQuery.toLowerCase())) return false;
+                      return true;
+                    });
+
+                    if (catProds.length === 0) return null;
+
+                    const isCollapsed = !posSearchQuery.trim() && posCollapsedCategories[cat] === true;
+
                     return (
                       <div
-                        key={prod.id}
-                        onClick={() => addToPosCart(prod)}
-                        className="bg-white rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md hover:border-brand-primary/50 transition p-4 cursor-pointer flex flex-col justify-between text-center relative overflow-hidden group"
+                        key={cat}
+                        className="bg-white rounded-2xl border border-slate-150 shadow-2xs overflow-hidden transition-all duration-200"
                       >
-                        <span className={`absolute top-2 left-2 text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider z-10 ${
-                          isDrink ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {isDrink ? '🥤 Bebida' : '🍲 Alimento'}
-                        </span>
-                        {prod.image && (
-                          <div className="w-16 h-16 mx-auto rounded-xl overflow-hidden mb-2 bg-slate-50 transition-transform group-hover:scale-105 mt-3">
-                            <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {/* Collapsible Accordion Header */}
+                        <div
+                          onClick={() => setPosCollapsedCategories(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                          className={`p-3.5 flex items-center justify-between cursor-pointer transition select-none ${
+                            isCollapsed
+                              ? 'bg-slate-50 hover:bg-slate-100 text-slate-700'
+                              : 'bg-gradient-to-r from-amber-50/70 via-orange-50/40 to-white border-b border-slate-100 text-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center transition text-xs ${
+                              isCollapsed ? 'bg-slate-200 text-slate-600' : 'bg-brand-primary text-white shadow-2xs'
+                            }`}>
+                              {isCollapsed ? <Folder className="w-3.5 h-3.5" /> : <FolderOpen className="w-3.5 h-3.5" />}
+                            </div>
+                            <span className="font-extrabold text-slate-900 text-sm">
+                              {cat}
+                            </span>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-150 text-slate-700">
+                              {catProds.length}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">
+                              {isCollapsed ? 'Desplegar' : 'Replegar'}
+                            </span>
+                            <div className="p-1 rounded-lg bg-white border border-slate-200 text-slate-600">
+                              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Accordion Dishes Grid */}
+                        {!isCollapsed && (
+                          <div className="p-3.5 bg-slate-50/30 animate-fadeIn">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {catProds.map((prod) => {
+                                const prodMods = (prod.modifiers && prod.modifiers.length > 0) ? prod.modifiers : (prod.extras || []);
+                                const hasModifiers = prodMods.length > 0;
+
+                                return (
+                                  <div
+                                    key={prod.id}
+                                    onClick={() => {
+                                      if (hasModifiers) {
+                                        openPosModifierModal(prod);
+                                      } else {
+                                        addToPosCart(prod);
+                                      }
+                                    }}
+                                    className="bg-white rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md hover:border-brand-primary/50 transition p-3 cursor-pointer flex flex-col justify-between text-center relative overflow-hidden group"
+                                  >
+                                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200/50 truncate max-w-[85px]">
+                                        📁 {prod.category || cat}
+                                      </span>
+                                      {hasModifiers && (
+                                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                          🧂 {prodMods.length}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {prod.image && (
+                                      <div className="w-14 h-14 mx-auto rounded-xl overflow-hidden mb-1.5 bg-slate-50 transition-transform group-hover:scale-105">
+                                        <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      </div>
+                                    )}
+                                    <h4 className="font-bold text-slate-800 text-xs leading-tight line-clamp-2">{prod.name}</h4>
+                                    <span className="text-brand-primary font-black text-xs mt-1 block">${prod.price}</span>
+
+                                    {hasModifiers ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openPosModifierModal(prod);
+                                        }}
+                                        className="mt-2 w-full py-1 px-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-[10px] font-extrabold transition flex items-center justify-center gap-0.5 shadow-2xs cursor-pointer"
+                                      >
+                                        <span>🧂 Armar extras</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          addToPosCart(prod);
+                                        }}
+                                        className="mt-2 w-full py-1 px-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[10px] font-bold transition flex items-center justify-center gap-0.5 cursor-pointer"
+                                      >
+                                        <span>+ Agregar</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
-                        <h4 className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">{prod.name}</h4>
-                        <span className="text-brand-primary font-black text-sm mt-2 block">${prod.price}</span>
                       </div>
                     );
                   })}
+
+                  {/* Unassigned products accordion in POS if any */}
+                  {posCategoryFilter === 'ALL' && unassignedPosProducts.length > 0 && (() => {
+                    const matchedUnassigned = unassignedPosProducts.filter(p => !posSearchQuery.trim() || p.name.toLowerCase().includes(posSearchQuery.toLowerCase()));
+                    if (matchedUnassigned.length === 0) return null;
+                    const isCollapsed = !posSearchQuery.trim() && posCollapsedCategories['__pos_otros'] === true;
+
+                    return (
+                      <div className="bg-white rounded-2xl border border-slate-150 shadow-2xs overflow-hidden transition-all duration-200">
+                        <div
+                          onClick={() => setPosCollapsedCategories(prev => ({ ...prev, '__pos_otros': !prev['__pos_otros'] }))}
+                          className="p-3.5 flex items-center justify-between cursor-pointer bg-slate-50 hover:bg-slate-100 text-slate-700"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center text-xs">
+                              <Folder className="w-3.5 h-3.5" />
+                            </div>
+                            <span className="font-extrabold text-slate-800 text-sm">Más Platillos</span>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{matchedUnassigned.length}</span>
+                          </div>
+                          <div className="p-1 rounded-lg bg-white border border-slate-200 text-slate-600">
+                            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                          </div>
+                        </div>
+
+                        {!isCollapsed && (
+                          <div className="p-3.5 bg-slate-50/30 animate-fadeIn">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {matchedUnassigned.map((prod) => (
+                                <div
+                                  key={prod.id}
+                                  onClick={() => addToPosCart(prod)}
+                                  className="bg-white rounded-2xl border border-slate-100 p-3 text-center cursor-pointer hover:border-brand-primary/50 transition"
+                                >
+                                  <h4 className="font-bold text-slate-800 text-xs">{prod.name}</h4>
+                                  <span className="text-brand-primary font-black text-xs block mt-1">${prod.price}</span>
+                                  <button type="button" className="mt-2 w-full py-1 bg-slate-100 text-slate-700 rounded-xl text-[10px] font-bold">+ Agregar</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -5548,21 +6109,31 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                             ) : (
                               <div className="space-y-1.5">
                                 <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
-                                  {tableOrders.flatMap(o => o.items.map(item => ({ ...item, status: o.status }))).map((it, idx) => (
-                                    <div key={idx} className="flex justify-between text-[10px] font-medium font-mono text-slate-600">
-                                      <span className="flex items-center gap-1">
-                                        {it.status === 'SERVED' ? (
-                                          <span className="text-emerald-600 font-bold">✓</span>
-                                        ) : it.status === 'READY' ? (
-                                          <span className="text-amber-500 font-bold">🛎</span>
-                                        ) : (
-                                          <span className="text-blue-500 font-bold">🍳</span>
+                                  {tableOrders.flatMap(o => o.items.map(item => ({ ...item, status: o.status }))).map((it, idx) => {
+                                    const itExtrasCost = (it.selectedExtras || []).reduce((s, ex) => s + (ex.price || 0), 0);
+                                    return (
+                                      <div key={idx} className="space-y-0.5">
+                                        <div className="flex justify-between text-[10px] font-medium font-mono text-slate-600">
+                                          <span className="flex items-center gap-1">
+                                            {it.status === 'SERVED' ? (
+                                              <span className="text-emerald-600 font-bold">✓</span>
+                                            ) : it.status === 'READY' ? (
+                                              <span className="text-amber-500 font-bold">🛎</span>
+                                            ) : (
+                                              <span className="text-blue-500 font-bold">🍳</span>
+                                            )}
+                                            {it.quantity}x {it.name}
+                                          </span>
+                                          <span className="text-slate-500">${(it.price + itExtrasCost) * it.quantity}</span>
+                                        </div>
+                                        {it.selectedExtras && it.selectedExtras.length > 0 && (
+                                          <div className="text-[9px] text-indigo-600 pl-4 font-sans font-medium">
+                                            + {it.selectedExtras.map(e => e.name + (e.price > 0 ? ` (+$${e.price})` : '')).join(', ')}
+                                          </div>
                                         )}
-                                        {it.quantity}x {it.name}
-                                      </span>
-                                      <span className="text-slate-500">${it.price * it.quantity}</span>
-                                    </div>
-                                  ))}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                                 <div className="flex gap-2 pt-1 border-t border-slate-200 text-[9px] font-bold text-slate-400 uppercase justify-between">
                                   <div className="flex gap-2">
@@ -5643,56 +6214,95 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                   La comanda está vacía.<br />Agrega productos desde la izquierda.
                 </div>
               ) : (
-                <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 my-4">
-                  {posCart.map((item, index) => (
-                    <div key={item.product.id} className="py-2.5 space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <div className="flex-1 pr-4">
-                          <span className="font-bold text-slate-800 text-sm block leading-tight">{item.product.name}</span>
-                          <span className="text-slate-400 text-xs">${item.product.price} c/u</span>
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 my-4 pr-1">
+                  {posCart.map((item, index) => {
+                    const extrasCost = (item.selectedExtras || []).reduce((acc, ex) => acc + (ex.price || 0), 0);
+                    const unitPrice = item.product.price + extrasCost;
+                    const itemTotal = unitPrice * item.quantity;
+                    const prodMods = (item.product.modifiers && item.product.modifiers.length > 0) ? item.product.modifiers : (item.product.extras || []);
+                    const canCustomize = prodMods.length > 0;
+
+                    return (
+                      <div key={item.id || `${item.product.id}-${index}`} className="py-2.5 space-y-1.5">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 pr-3">
+                            <span className="font-bold text-slate-800 text-sm block leading-tight">{item.product.name}</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-slate-500 text-xs font-semibold">
+                                ${unitPrice} c/u {extrasCost > 0 && <span className="text-[10px] text-slate-400">(${item.product.price} + ${extrasCost})</span>}
+                              </span>
+                              <span className="font-bold text-brand-primary text-xs">= ${itemTotal}</span>
+                            </div>
+
+                            {/* Display Selected Modifiers */}
+                            {item.selectedExtras && item.selectedExtras.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {item.selectedExtras.map((ex, exIdx) => (
+                                  <span
+                                    key={exIdx}
+                                    className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-lg border border-indigo-200"
+                                  >
+                                    <span>🧂 {ex.name}</span>
+                                    <span className="text-[9px] text-indigo-500 font-semibold">{ex.price > 0 ? `(+$${ex.price})` : '(Sin costo)'}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                            {canCustomize && (
+                              <button
+                                onClick={() => openPosModifierModal(item.product, item)}
+                                className="p-1 border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded-lg text-[10px] font-extrabold flex items-center gap-0.5 cursor-pointer"
+                                type="button"
+                                title="Editar modificadores"
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => updatePosCartQty(item.id, -1)}
+                              className="p-1 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500 cursor-pointer"
+                              type="button"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="font-bold text-slate-700 text-sm px-1 min-w-[18px] text-center">{item.quantity}</span>
+                            <button 
+                              onClick={() => updatePosCartQty(item.id, 1)}
+                              className="p-1 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500 cursor-pointer"
+                              type="button"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => removeFromPosCart(item.id)}
+                              className="p-1 hover:text-rose-500 text-slate-300 ml-1 cursor-pointer"
+                              type="button"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button 
-                            onClick={() => updatePosCartQty(item.product.id, -1)}
-                            className="p-1 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500"
-                            type="button"
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <span className="font-bold text-slate-700 text-sm px-1">{item.quantity}</span>
-                          <button 
-                            onClick={() => updatePosCartQty(item.product.id, 1)}
-                            className="p-1 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500"
-                            type="button"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => removeFromPosCart(item.product.id)}
-                            className="p-1 hover:text-rose-500 text-slate-300 ml-2"
-                            type="button"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </button>
+                        
+                        {/* Specifications input */}
+                        <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                          <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase shrink-0 pl-1">Esp:</span>
+                          <input
+                            type="text"
+                            placeholder="Especificaciones (ej: sin cebolla, salsa aparte)"
+                            value={item.notes || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setPosCart(posCart.map((c, i) => i === index ? { ...c, notes: val } : c));
+                            }}
+                            className="flex-1 bg-transparent border-none text-[11px] text-slate-600 focus:outline-none placeholder-slate-400 font-medium py-0.5"
+                          />
                         </div>
                       </div>
-                      
-                      {/* Specifications input */}
-                      <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                        <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase shrink-0 pl-1">Esp:</span>
-                        <input
-                          type="text"
-                          placeholder="Especificaciones (ej: sin cebolla, salsa aparte)"
-                          value={item.notes || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setPosCart(posCart.map((c, i) => i === index ? { ...c, notes: val } : c));
-                          }}
-                          className="flex-1 bg-transparent border-none text-[11px] text-slate-600 focus:outline-none placeholder-slate-400 font-medium py-0.5"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -5732,6 +6342,227 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
           </div>
         </div>
       )}
+
+      {/* MODAL DE PERSONALIZACIÓN DE PLATILLOS / MODIFICADORES EN POS (PARA MESERO Y CAJERO) */}
+      {posModalProduct && (() => {
+        const prodMods: ProductModifier[] = (posModalProduct.modifiers && posModalProduct.modifiers.length > 0)
+          ? posModalProduct.modifiers
+          : (posModalProduct.extras || []);
+        const extrasCost = posModalSelectedExtras.reduce((sum, e) => sum + (e.price || 0), 0);
+        const unitPrice = posModalProduct.price + extrasCost;
+        const totalPrice = unitPrice * posModalQuantity;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-slate-150">
+              
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-amber-50/60 to-orange-50/40 shrink-0">
+                <div className="flex items-start gap-3">
+                  {posModalProduct.image ? (
+                    <img
+                      src={posModalProduct.image}
+                      alt={posModalProduct.name}
+                      className="w-14 h-14 rounded-2xl object-cover border border-amber-200 shrink-0 bg-white"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-amber-100 text-brand-primary font-extrabold flex items-center justify-center text-xl shrink-0">
+                      <Folder className="w-6 h-6" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                        📁 {posModalProduct.category || 'General'}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {editingPosCartItemId ? '✏️ Editando platillo' : '✨ Armar platillo'}
+                      </span>
+                    </div>
+                    <h3 className="font-extrabold text-slate-800 text-lg leading-tight mt-1">{posModalProduct.name}</h3>
+                    <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                      Precio base: <span className="font-black text-brand-primary">${posModalProduct.price}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closePosModifierModal}
+                  className="p-1.5 rounded-full hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  type="button"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-5 overflow-y-auto space-y-5 flex-1">
+                {posModalProduct.description && (
+                  <p className="text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    "{posModalProduct.description}"
+                  </p>
+                )}
+
+                {/* Modifiers List */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🧂 Modificadores e Ingredientes Extras</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-bold">
+                      {posModalSelectedExtras.length} seleccionado(s)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Selecciona los modificadores que el cliente desea para armar su platillo:
+                  </p>
+
+                  {prodMods.length === 0 ? (
+                    <div className="text-center py-6 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <p className="text-xs text-slate-400 font-medium">Este producto no cuenta con modificadores dados de alta.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {prodMods.map((mod, modIdx) => {
+                        const isOutOfStock = mod.available === false;
+                        const isSel = posModalSelectedExtras.some(e => e.name === mod.name);
+                        const isFree = !mod.price || mod.price <= 0;
+
+                        return (
+                          <div
+                            key={mod.id || `${mod.name}-${modIdx}`}
+                            onClick={() => {
+                              if (isOutOfStock) return;
+                              if (isSel) {
+                                setPosModalSelectedExtras(posModalSelectedExtras.filter(e => e.name !== mod.name));
+                              } else {
+                                setPosModalSelectedExtras([...posModalSelectedExtras, { name: mod.name, price: mod.price || 0 }]);
+                              }
+                            }}
+                            className={`flex items-center justify-between p-3 rounded-2xl border transition select-none ${
+                              isOutOfStock
+                                ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed'
+                                : isSel
+                                  ? 'bg-indigo-50/80 border-indigo-300 shadow-2xs cursor-pointer'
+                                  : 'border-slate-200 hover:bg-slate-50 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                disabled={isOutOfStock}
+                                checked={isSel}
+                                onChange={() => {}} // handled by parent div
+                                className="accent-indigo-600 w-4 h-4 rounded cursor-pointer disabled:cursor-not-allowed"
+                              />
+                              <div>
+                                <span className={`text-xs block ${isOutOfStock ? 'line-through text-slate-400 font-medium' : isSel ? 'font-black text-indigo-950' : 'font-bold text-slate-800'}`}>
+                                  {mod.name}
+                                </span>
+                                {isOutOfStock && (
+                                  <span className="text-[10px] text-rose-500 font-extrabold uppercase tracking-wider inline-flex items-center gap-0.5 mt-0.5">
+                                    ⚠️ AGOTADO temporalmente
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              {isOutOfStock ? (
+                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                  No disponible
+                                </span>
+                              ) : isFree ? (
+                                <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                  Sin costo
+                                </span>
+                              ) : (
+                                <span className="text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                                  +${mod.price}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes / Special Instructions */}
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5">
+                    📝 Especificaciones para Cocina
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: salsa aparte, término 3/4, sin sal, etc."
+                    value={posModalNotes}
+                    onChange={(e) => setPosModalNotes(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-brand-primary bg-slate-50 focus:bg-white font-medium text-slate-700"
+                  />
+                </div>
+
+                {/* Quantity Selector */}
+                <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+                  <div>
+                    <span className="text-xs font-black text-slate-700 uppercase tracking-wider block">Cantidad</span>
+                    <span className="text-[10px] text-slate-400">¿Cuántos platillos iguales armar?</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPosModalQuantity(Math.max(1, posModalQuantity - 1))}
+                      className="w-8 h-8 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 flex items-center justify-center font-black cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <span className="w-8 text-center font-black text-slate-800 text-sm">{posModalQuantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPosModalQuantity(posModalQuantity + 1)}
+                      className="w-8 h-8 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 flex items-center justify-center font-black cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer with Price breakdown and confirm button */}
+              <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-between shrink-0">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">
+                    {posModalQuantity}x a ${unitPrice} c/u
+                  </span>
+                  <span className="text-xl font-black text-brand-primary">
+                    ${totalPrice}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closePosModifierModal}
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-200 transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSavePosModalProduct}
+                    className="px-5 py-2.5 rounded-xl text-xs font-black bg-brand-primary hover:bg-brand-primary-hover text-white shadow-md hover:shadow-lg transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{editingPosCartItemId ? 'Actualizar Comanda' : 'Agregar a Comanda'}</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 3. PANTALLA COCINA */}
       {activeTab === 'kitchen' && (
@@ -5860,8 +6691,8 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                               <span className={`block text-xs font-semibold mt-0.5 ${isCancelled ? 'text-rose-100' : 'text-slate-400'}`}>Opción: {it.selectedVariant}</span>
                             )}
                             {it.selectedExtras && it.selectedExtras.length > 0 && (
-                              <span className={`block text-xs font-medium mt-0.5 ${isCancelled ? 'text-amber-200' : 'text-brand-primary'}`}>
-                                Extras: {it.selectedExtras.map(e => e.name).join(', ')}
+                              <span className={`block text-xs font-bold mt-1 ${isCancelled ? 'text-amber-200' : 'text-brand-primary'}`}>
+                                🧂 Modificadores: {it.selectedExtras.map(e => e.name + (e.price > 0 ? ` (+$${e.price})` : '')).join(', ')}
                               </span>
                             )}
                             {it.notes && (
@@ -6525,6 +7356,162 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
             </div>
           </div>
 
+          {/* Custom Categories Management Section (Owner) */}
+          <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 text-base uppercase tracking-tight flex items-center gap-2">
+                    Categorías Personalizadas del Menú
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 normal-case">
+                      {currentRestaurantCategories.length} activas
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-400 font-medium mt-0.5">
+                    Organiza tus platillos en secciones desplegables. El mesero, cajero y comensal podrán replegar y desplegar cada categoría.
+                  </p>
+                </div>
+              </div>
+
+              {/* Add category form inline */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (newCategoryName.trim()) {
+                    handleAddCustomCategory();
+                  }
+                }}
+                className="flex gap-2 w-full md:w-auto"
+              >
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="ej: Tacos, Bebidas, Postres..."
+                  className="bg-gray-50 border border-gray-200 text-slate-800 font-semibold rounded-2xl px-4 py-2.5 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-hidden flex-1 md:w-64"
+                />
+                <button
+                  type="submit"
+                  disabled={!newCategoryName.trim()}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                    newCategoryName.trim()
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Agregar Categoría</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Category action message */}
+            {categoryActionMessage && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-150 text-emerald-700 text-xs font-bold rounded-2xl flex items-center gap-2 animate-fadeIn">
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{categoryActionMessage}</span>
+              </div>
+            )}
+
+            {/* Interactive Category Chips with Rename & Delete */}
+            <div className="flex flex-wrap gap-2.5 items-center">
+              {currentRestaurantCategories.map((cat) => {
+                const prodCount = products.filter(p => (p.category?.trim() || 'General').toLowerCase() === cat.toLowerCase()).length;
+                const isEditing = editingCategoryOldName === cat;
+
+                if (isEditing) {
+                  return (
+                    <div
+                      key={cat}
+                      className="flex items-center gap-1.5 p-1.5 bg-indigo-50 border-2 border-indigo-400 rounded-2xl shadow-xs"
+                    >
+                      <input
+                        type="text"
+                        value={editingCategoryNewName}
+                        onChange={(e) => setEditingCategoryNewName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameCustomCategory(cat);
+                          if (e.key === 'Escape') setEditingCategoryOldName(null);
+                        }}
+                        autoFocus
+                        className="bg-white border border-indigo-200 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-xl outline-hidden w-36"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRenameCustomCategory(cat)}
+                        className="px-2 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-lg hover:bg-indigo-700 transition cursor-pointer"
+                      >
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCategoryOldName(null)}
+                        className="px-2 py-1 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-lg hover:bg-gray-300 transition cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={cat}
+                    className="flex items-center gap-2 pl-3.5 pr-2 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-2xl transition group"
+                  >
+                    <span className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                      📁 {cat}
+                    </span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 font-mono">
+                      {prodCount}
+                    </span>
+                    <div className="flex items-center gap-0.5 pl-1 border-l border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCategoryOldName(cat);
+                          setEditingCategoryNewName(cat);
+                        }}
+                        title="Renombrar categoría"
+                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCustomCategory(cat)}
+                        title="Eliminar categoría"
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Quick suggestions if few categories */}
+              {currentRestaurantCategories.length < 8 && (
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-semibold pl-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Sugerencias:</span>
+                  {['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Combos'].filter(s => !currentRestaurantCategories.some(c => c.toLowerCase() === s.toLowerCase())).slice(0, 3).map(sug => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => handleAddCustomCategory(sug)}
+                      className="px-2 py-1 bg-gray-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-xl text-[10px] font-bold transition cursor-pointer border border-dashed border-gray-200"
+                    >
+                      + {sug}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             {/* Left: Add Product Form */}
             <div className="bg-white border border-gray-200 p-6 rounded-3xl shadow-xs self-start">
@@ -6577,29 +7564,42 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-1.5">¿Es Alimento o Bebida? *</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-1.5">Categoría del Platillo *</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={newProdCategory || (currentRestaurantCategories[0] || 'General')}
+                      onChange={(e) => {
+                        if (e.target.value === '__NEW__') {
+                          const cat = prompt('Escribe el nombre de la nueva categoría para este platillo:');
+                          if (cat && cat.trim()) {
+                            handleAddCustomCategory(cat.trim());
+                            setNewProdCategory(cat.trim());
+                          }
+                        } else {
+                          setNewProdCategory(e.target.value);
+                        }
+                      }}
+                      className="flex-1 bg-gray-50 border border-gray-200 text-slate-800 font-bold rounded-2xl p-3 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-hidden cursor-pointer"
+                    >
+                      {currentRestaurantCategories.map((c) => (
+                        <option key={c} value={c}>📁 {c}</option>
+                      ))}
+                      <option value="__NEW__">➕ Crear nueva categoría...</option>
+                    </select>
                     <button
                       type="button"
-                      onClick={() => setNewProdType('FOOD')}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-black transition cursor-pointer border ${
-                        newProdType === 'FOOD'
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/20'
-                          : 'bg-gray-50 text-slate-600 border-gray-200 hover:bg-gray-100'
-                      }`}
+                      onClick={() => {
+                        const cat = prompt('Escribe el nombre de la nueva categoría para este restaurante:');
+                        if (cat && cat.trim()) {
+                          handleAddCustomCategory(cat.trim());
+                          setNewProdCategory(cat.trim());
+                        }
+                      }}
+                      title="Crear nueva categoría"
+                      className="px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold rounded-2xl text-xs border border-indigo-200 transition cursor-pointer flex items-center gap-1 shrink-0"
                     >
-                      <Utensils className="w-4 h-4" /> 🍲 Alimento
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewProdType('DRINK')}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-black transition cursor-pointer border ${
-                        newProdType === 'DRINK'
-                          ? 'bg-sky-500 text-white border-sky-600 shadow-xs ring-2 ring-sky-500/20'
-                          : 'bg-gray-50 text-slate-600 border-gray-200 hover:bg-gray-100'
-                      }`}
-                    >
-                      <CupSoda className="w-4 h-4" /> 🥤 Bebida
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      <span>+ Nueva</span>
                     </button>
                   </div>
                 </div>
@@ -6621,6 +7621,93 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                   />
                 </div>
 
+                {/* Modificadores / Extras para el nuevo platillo */}
+                <div className="pt-2 border-t border-gray-150">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[10px] font-extrabold text-slate-600 uppercase">
+                      🧂 Modificadores / Ingredientes Extras ({newProdModifiers.length})
+                    </label>
+                    <span className="text-[9px] text-gray-400 font-bold uppercase">
+                      Opcional
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 font-medium mb-2 leading-tight">
+                    Ingredientes que el cliente puede elegir. Deja el precio en $0 si no tiene costo extra.
+                  </p>
+
+                  {/* Input fields to add a modifier */}
+                  <div className="flex gap-2 mb-2.5">
+                    <input
+                      type="text"
+                      value={newModName}
+                      onChange={(e) => setNewModName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToNewProduct(); } }}
+                      placeholder="ej: Queso extra, Sin cebolla"
+                      className="flex-1 bg-gray-50 border border-gray-200 text-slate-800 font-semibold rounded-xl p-2 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary outline-hidden"
+                    />
+                    <div className="relative w-24">
+                      <span className="absolute left-2.5 top-2 text-xs text-gray-400 font-bold">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={newModPrice}
+                        onChange={(e) => setNewModPrice(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToNewProduct(); } }}
+                        placeholder="0.00"
+                        title="0 para modificador gratis / sin costo extra"
+                        className="w-full pl-6 bg-gray-50 border border-gray-200 text-slate-800 font-semibold rounded-xl p-2 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary outline-hidden"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddModifierToNewProduct}
+                      className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Agregar
+                    </button>
+                  </div>
+
+                  {/* Current Modifiers list */}
+                  {newProdModifiers.length > 0 && (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {newProdModifiers.map((mod) => (
+                        <div
+                          key={mod.id}
+                          className="flex items-center justify-between p-2 rounded-xl bg-gray-50 border border-gray-200 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800">{mod.name}</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${mod.price > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                              {mod.price > 0 ? `+$${mod.price}` : 'Gratis ($0)'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleNewModifierAvailability(mod.id)}
+                              className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md uppercase transition cursor-pointer ${
+                                mod.available 
+                                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                                  : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                              }`}
+                            >
+                              {mod.available ? '● DISP' : '○ AGOTADO'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveModifierFromNewProduct(mod.id)}
+                              className="text-gray-400 hover:text-rose-500 p-1 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   type="submit"
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 px-5 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg cursor-pointer"
@@ -6638,139 +7725,347 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                     <ShoppingBag className="w-5 h-5 text-indigo-500" /> Carta de Platillos ({products.length})
                   </h3>
                   <p className="text-xs text-gray-400 font-bold uppercase mt-0.5">
-                    Habilita, deshabilita o elimina platillos de tu menú digital.
+                    Habilita, deshabilita o elimina platillos de tu menú digital por categoría.
                   </p>
                 </div>
 
-                {/* Filter tabs for Alimentos vs Bebidas */}
-                <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-2xl shrink-0">
+                {/* Quick Expand / Collapse Controls */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setCatalogTypeFilter('ALL')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
-                      catalogTypeFilter === 'ALL'
-                        ? 'bg-white text-slate-800 shadow-xs'
-                        : 'text-gray-500 hover:text-slate-800'
-                    }`}
+                    onClick={() => setCatalogCollapsedCategories({})}
+                    title="Desplegar todas las categorías"
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
                   >
-                    🍽️ Todos
+                    <FolderOpen className="w-3.5 h-3.5 text-brand-primary" />
+                    <span>Desplegar todo</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCatalogTypeFilter('FOOD')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
-                      catalogTypeFilter === 'FOOD'
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'text-gray-500 hover:text-amber-600'
-                    }`}
+                    onClick={() => {
+                      const allCol: Record<string, boolean> = {};
+                      currentRestaurantCategories.forEach(c => { allCol[c] = true; });
+                      setCatalogCollapsedCategories(allCol);
+                    }}
+                    title="Replegar todas las categorías"
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-bold transition cursor-pointer flex items-center gap-1"
                   >
-                    <Utensils className="w-3.5 h-3.5" /> Alimentos
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogTypeFilter('DRINK')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
-                      catalogTypeFilter === 'DRINK'
-                        ? 'bg-sky-500 text-white shadow-xs'
-                        : 'text-gray-500 hover:text-sky-600'
-                    }`}
-                  >
-                    <CupSoda className="w-3.5 h-3.5" /> Bebidas
+                    <Folder className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Replegar todo</span>
                   </button>
                 </div>
               </div>
 
-              {(() => {
-                const filteredCatalogProducts = products.filter((prod) => {
-                  const pType = prod.type || (prod.category?.toLowerCase().includes('bebida') ? 'DRINK' : 'FOOD');
-                  if (catalogTypeFilter === 'FOOD' && pType !== 'FOOD') return false;
-                  if (catalogTypeFilter === 'DRINK' && pType !== 'DRINK') return false;
-                  return true;
-                });
+              {/* Horizontal Custom Categories Bar */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+                <button
+                  type="button"
+                  onClick={() => { setCatalogCategoryFilter('ALL'); setCatalogCollapsedCategories({}); }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    catalogCategoryFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>🍽️ Todas</span>
+                  <span className="text-[10px] opacity-75 font-mono">({products.length})</span>
+                </button>
 
-                if (filteredCatalogProducts.length === 0) {
+                {currentRestaurantCategories.map((cat) => {
+                  const count = products.filter(p => (p.category?.trim() || 'General').toLowerCase() === cat.toLowerCase()).length;
+                  const isSelected = catalogCategoryFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setCatalogCategoryFilter(cat);
+                        setCatalogCollapsedCategories(prev => ({ ...prev, [cat]: false }));
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                        isSelected
+                          ? 'bg-brand-primary text-white shadow-xs font-black'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>📁 {cat}</span>
+                      {count > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                if (products.length === 0) {
                   return (
                     <div className="text-center py-20 border-2 border-dashed border-gray-100 rounded-3xl text-gray-400 font-bold text-sm">
-                      {products.length === 0
-                        ? 'No hay platillos registrados en el menú. ¡Agrega el primero para comenzar!'
-                        : 'No hay productos que coincidan con la clasificación seleccionada.'}
+                      No hay platillos registrados en el menú. ¡Agrega el primero para comenzar!
                     </div>
                   );
                 }
 
+                const categoriesToShow = catalogCategoryFilter === 'ALL'
+                  ? currentRestaurantCategories
+                  : currentRestaurantCategories.filter(c => c.toLowerCase() === catalogCategoryFilter.toLowerCase());
+
+                const unassignedProds = products.filter(p => {
+                  const pCat = p.category?.trim() || '';
+                  return !currentRestaurantCategories.some(rc => rc.toLowerCase() === pCat.toLowerCase());
+                });
+
                 return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[700px] overflow-y-auto pr-2">
-                    {filteredCatalogProducts.map((prod) => {
-                      const isDrink = (prod.type === 'DRINK') || (!prod.type && prod.category?.toLowerCase().includes('bebida'));
+                  <div className="space-y-4 max-h-[750px] overflow-y-auto pr-1">
+                    {categoriesToShow.map((cat) => {
+                      const catProds = products.filter(p => (p.category?.trim() || 'General').toLowerCase() === cat.toLowerCase());
+                      if (catProds.length === 0 && catalogCategoryFilter === 'ALL') return null;
+
+                      const isCollapsed = catalogCollapsedCategories[cat] === true;
+
                       return (
-                        <div 
-                          key={prod.id} 
-                          className={`border rounded-2xl p-4 flex gap-4 transition duration-200 hover:shadow-md bg-white ${
-                            prod.available ? 'border-slate-150' : 'border-rose-100 bg-rose-50/10'
-                          }`}
+                        <div
+                          key={cat}
+                          className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all duration-200"
                         >
-                          <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-50 shrink-0 border border-slate-100 relative">
-                            <img 
-                              src={prod.image} 
-                              alt={prod.name} 
-                              className={`w-full h-full object-cover transition ${!prod.available ? 'grayscale opacity-60' : ''}`} 
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
-                          <div className="flex-1 flex flex-col justify-between">
-                            <div>
-                              <div className="flex justify-between items-start gap-2">
-                                <h4 className="font-extrabold text-slate-800 text-sm leading-snug">{prod.name}</h4>
-                                <span className="font-black text-indigo-600 text-sm shrink-0">${prod.price}</span>
+                          {/* Collapsible Accordion Header */}
+                          <div
+                            onClick={() => setCatalogCollapsedCategories(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                            className={`p-3.5 flex items-center justify-between cursor-pointer transition select-none ${
+                              isCollapsed
+                                ? 'bg-slate-50 hover:bg-slate-100 text-slate-700'
+                                : 'bg-gradient-to-r from-orange-50/70 via-amber-50/40 to-white border-b border-slate-100 text-slate-900'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center transition text-xs ${
+                                isCollapsed ? 'bg-slate-200 text-slate-600' : 'bg-brand-primary text-white shadow-2xs'
+                              }`}>
+                                {isCollapsed ? <Folder className="w-3.5 h-3.5" /> : <FolderOpen className="w-3.5 h-3.5" />}
                               </div>
-                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider inline-flex items-center gap-1 ${
-                                  isDrink ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'
-                                }`}>
-                                  {isDrink ? '🥤 Bebida' : '🍲 Alimento'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-400 line-clamp-2 mt-1.5">{prod.description}</p>
+                              <span className="font-extrabold text-slate-900 text-sm">
+                                {cat}
+                              </span>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-150 text-slate-700">
+                                {catProds.length} {catProds.length === 1 ? 'platillo' : 'platillos'}
+                              </span>
                             </div>
-                            
-                            <div className="flex justify-between items-center mt-3 pt-2.5 border-t border-slate-100">
-                              {/* Toggle availability badge */}
-                              <button
-                                type="button"
-                                onClick={() => handleToggleProductAvailability(prod.id, prod.available)}
-                                className={`px-3 py-1 rounded-full text-[9px] font-extrabold transition uppercase cursor-pointer ${
-                                  prod.available 
-                                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
-                                    : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                                }`}
-                              >
-                                {prod.available ? '● DISPONIBLE' : '○ AGOTADO'}
-                              </button>
 
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditProduct(prod)}
-                                  className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-lg transition cursor-pointer"
-                                  title="Editar platillo"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteProduct(prod.id)}
-                                  className="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition cursor-pointer"
-                                  title="Eliminar de la carta"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                            <div className="flex items-center gap-1.5 text-slate-500">
+                              <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">
+                                {isCollapsed ? 'Desplegar' : 'Replegar'}
+                              </span>
+                              <div className="p-1 rounded-lg bg-white border border-slate-200 text-slate-600">
+                                {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
                               </div>
                             </div>
                           </div>
+
+                          {/* Collapsible Accordion Content */}
+                          {!isCollapsed && (
+                            <div className="p-4 bg-slate-50/30 animate-fadeIn">
+                              {catProds.length === 0 ? (
+                                <p className="text-center py-6 text-xs text-slate-400 font-semibold italic">
+                                  No hay platillos registrados en esta categoría aún.
+                                </p>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {catProds.map((prod) => {
+                                    return (
+                                      <div
+                                        key={prod.id}
+                                        className={`border rounded-2xl p-4 flex gap-4 transition duration-200 hover:shadow-md bg-white ${
+                                          prod.available ? 'border-slate-150' : 'border-rose-100 bg-rose-50/10'
+                                        }`}
+                                      >
+                                        <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-50 shrink-0 border border-slate-100 relative">
+                                          <img
+                                            src={prod.image}
+                                            alt={prod.name}
+                                            className={`w-full h-full object-cover transition ${!prod.available ? 'grayscale opacity-60' : ''}`}
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        </div>
+                                        <div className="flex-1 flex flex-col justify-between">
+                                          <div>
+                                            <div className="flex justify-between items-start gap-2">
+                                              <h4 className="font-extrabold text-slate-800 text-sm leading-snug">{prod.name}</h4>
+                                              <span className="font-black text-indigo-600 text-sm shrink-0">${prod.price}</span>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200/60">
+                                                📁 {prod.category || cat}
+                                              </span>
+                                            </div>
+                                            <p className="text-xs text-slate-400 line-clamp-2 mt-1.5">{prod.description}</p>
+                                          </div>
+
+                                          {/* Modifiers Chips with 1-click stock toggle */}
+                                          {(() => {
+                                            const prodMods: ProductModifier[] = ((prod.modifiers && prod.modifiers.length > 0) ? prod.modifiers : (prod.extras || [])).map((m: any, idx: number) => ({
+                                              id: m.id || `mod_${idx}`,
+                                              name: m.name,
+                                              price: typeof m.price === 'number' ? m.price : 0,
+                                              available: m.available !== false
+                                            }));
+
+                                            if (prodMods.length === 0) {
+                                              return (
+                                                <div className="mt-2 pt-1.5 border-t border-dashed border-slate-100 flex items-center justify-between text-[11px] text-gray-400">
+                                                  <span className="italic text-[10px]">Sin modificadores</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleOpenEditProduct(prod)}
+                                                    className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] hover:underline cursor-pointer"
+                                                  >
+                                                    + Agregar
+                                                  </button>
+                                                </div>
+                                              );
+                                            }
+
+                                            return (
+                                              <div className="mt-2 pt-1.5 border-t border-slate-100">
+                                                <div className="flex items-center justify-between mb-1">
+                                                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                                    🧂 Modificadores ({prodMods.length}):
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setManagingModifiersProduct(prod)}
+                                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                                  >
+                                                    Administrar
+                                                  </button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                                                  {prodMods.map((mod) => (
+                                                    <button
+                                                      key={mod.id || mod.name}
+                                                      type="button"
+                                                      onClick={() => handleToggleModifierAvailability(prod.id, mod.id || mod.name, mod.available)}
+                                                      title={mod.available ? 'Clic para marcar como AGOTADO temporalmente' : 'Clic para marcar como DISPONIBLE'}
+                                                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border transition cursor-pointer flex items-center gap-1 ${
+                                                        mod.available
+                                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                                          : 'bg-rose-50 text-rose-700 border-rose-200 line-through opacity-80 hover:bg-rose-100'
+                                                      }`}
+                                                    >
+                                                      <span>{mod.name}</span>
+                                                      <span className="text-[8px] font-black opacity-80">
+                                                        {mod.price > 0 ? `(+$${mod.price})` : '(Gratis)'}
+                                                      </span>
+                                                      <span className={`text-[7px] font-black px-1 rounded ${mod.available ? 'bg-emerald-200/70 text-emerald-900' : 'bg-rose-200/70 text-rose-900 no-underline'}`}>
+                                                        {mod.available ? '● DISP' : '○ AGOTADO'}
+                                                      </span>
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
+
+                                          <div className="flex justify-between items-center mt-3 pt-2.5 border-t border-slate-100">
+                                            {/* Toggle availability badge */}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleProductAvailability(prod.id, prod.available)}
+                                              className={`px-3 py-1 rounded-full text-[9px] font-extrabold transition uppercase cursor-pointer ${
+                                                prod.available 
+                                                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                                                  : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                                              }`}
+                                            >
+                                              {prod.available ? '● DISPONIBLE' : '○ AGOTADO'}
+                                            </button>
+
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenEditProduct(prod)}
+                                                className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-lg transition cursor-pointer"
+                                                title="Editar platillo"
+                                              >
+                                                <Pencil className="w-4 h-4" />
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteProduct(prod.id)}
+                                                className="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition cursor-pointer"
+                                                title="Eliminar de la carta"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
+
+                    {/* Unassigned products if any */}
+                    {catalogCategoryFilter === 'ALL' && unassignedProds.length > 0 && (() => {
+                      const isCollapsed = catalogCollapsedCategories['__cat_otros'] === true;
+                      return (
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition-all duration-200">
+                          <div
+                            onClick={() => setCatalogCollapsedCategories(prev => ({ ...prev, '__cat_otros': !prev['__cat_otros'] }))}
+                            className="p-3.5 flex items-center justify-between cursor-pointer bg-slate-50 hover:bg-slate-100 text-slate-700"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center text-xs">
+                                <Folder className="w-3.5 h-3.5" />
+                              </div>
+                              <span className="font-extrabold text-slate-800 text-sm">Más Platillos</span>
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">{unassignedProds.length}</span>
+                            </div>
+                            <div className="p-1 rounded-lg bg-white border border-slate-200 text-slate-600">
+                              {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                            </div>
+                          </div>
+                          {!isCollapsed && (
+                            <div className="p-4 bg-slate-50/30 grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {unassignedProds.map((prod) => (
+                                <div key={prod.id} className="border border-slate-150 rounded-2xl p-4 flex gap-4 bg-white">
+                                  <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-50 shrink-0 border border-slate-100">
+                                    <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  </div>
+                                  <div className="flex-1 flex flex-col justify-between">
+                                    <div>
+                                      <div className="flex justify-between items-start gap-2">
+                                        <h4 className="font-extrabold text-slate-800 text-sm">{prod.name}</h4>
+                                        <span className="font-black text-indigo-600 text-sm">${prod.price}</span>
+                                      </div>
+                                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 mt-1 inline-block">
+                                        📁 {prod.category || 'General'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-end gap-2 mt-2">
+                                      <button type="button" onClick={() => handleOpenEditProduct(prod)} className="text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50">
+                                        <Pencil className="w-4 h-4" />
+                                      </button>
+                                      <button type="button" onClick={() => handleDeleteProduct(prod.id)} className="text-rose-500 p-1.5 rounded-lg hover:bg-rose-50">
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })()}
@@ -7460,29 +8755,42 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
               </div>
 
               <div>
-                <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-1.5">¿Es Alimento o Bebida? *</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="block text-[10px] font-extrabold text-gray-400 uppercase mb-1.5">Categoría del Platillo *</label>
+                <div className="flex gap-2">
+                  <select
+                    value={editProdCategory || (currentRestaurantCategories[0] || 'General')}
+                    onChange={(e) => {
+                      if (e.target.value === '__NEW__') {
+                        const cat = prompt('Escribe el nombre de la nueva categoría para este platillo:');
+                        if (cat && cat.trim()) {
+                          handleAddCustomCategory(cat.trim());
+                          setEditProdCategory(cat.trim());
+                        }
+                      } else {
+                        setEditProdCategory(e.target.value);
+                      }
+                    }}
+                    className="flex-1 bg-gray-50 border border-gray-200 text-slate-800 font-bold rounded-2xl p-3 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary focus:border-brand-primary outline-hidden cursor-pointer"
+                  >
+                    {currentRestaurantCategories.map((c) => (
+                      <option key={c} value={c}>📁 {c}</option>
+                    ))}
+                    <option value="__NEW__">➕ Crear nueva categoría...</option>
+                  </select>
                   <button
                     type="button"
-                    onClick={() => setEditProdType('FOOD')}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-black transition cursor-pointer border ${
-                      editProdType === 'FOOD'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/20'
-                        : 'bg-gray-50 text-slate-600 border-gray-200 hover:bg-gray-100'
-                    }`}
+                    onClick={() => {
+                      const cat = prompt('Escribe el nombre de la nueva categoría para este restaurante:');
+                      if (cat && cat.trim()) {
+                        handleAddCustomCategory(cat.trim());
+                        setEditProdCategory(cat.trim());
+                      }
+                    }}
+                    title="Crear nueva categoría"
+                    className="px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold rounded-2xl text-xs border border-indigo-200 transition cursor-pointer flex items-center gap-1 shrink-0"
                   >
-                    <Utensils className="w-4 h-4" /> 🍲 Alimento
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditProdType('DRINK')}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl text-xs font-black transition cursor-pointer border ${
-                      editProdType === 'DRINK'
-                        ? 'bg-sky-500 text-white border-sky-600 shadow-xs ring-2 ring-sky-500/20'
-                        : 'bg-gray-50 text-slate-600 border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    <CupSoda className="w-4 h-4" /> 🥤 Bebida
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>+ Nueva</span>
                   </button>
                 </div>
               </div>
@@ -7504,6 +8812,103 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                 />
               </div>
 
+              {/* Modificadores / Extras del Platillo */}
+              <div className="pt-3 border-t border-gray-150">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] font-extrabold text-slate-600 uppercase">
+                    🧂 Modificadores / Extras ({editProdModifiers.length})
+                  </label>
+                  <span className="text-[10px] text-indigo-600 font-bold">
+                    Personalización del cliente
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-400 font-medium mb-2.5">
+                  Ingredientes extras o complementos. Puedes definir costo o dejarlos gratis ($0), y marcar como agotados los que no estén disponibles temporalmente.
+                </p>
+
+                {/* Inputs to add modifier */}
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={editModName}
+                    onChange={(e) => setEditModName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToEditProduct(); } }}
+                    placeholder="ej: Queso extra, Sin cebolla"
+                    className="flex-1 bg-gray-50 border border-gray-200 text-slate-800 font-semibold rounded-xl p-2.5 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary outline-hidden"
+                  />
+                  <div className="relative w-24">
+                    <span className="absolute left-2.5 top-2.5 text-xs text-gray-400 font-bold">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={editModPrice}
+                      onChange={(e) => setEditModPrice(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToEditProduct(); } }}
+                      placeholder="0.00"
+                      title="0 para modificador sin costo adicional"
+                      className="w-full pl-6 bg-gray-50 border border-gray-200 text-slate-800 font-semibold rounded-xl p-2.5 text-xs focus:bg-white focus:ring-1 focus:ring-brand-primary outline-hidden"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddModifierToEditProduct}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Agregar
+                  </button>
+                </div>
+
+                {/* Existing modifiers */}
+                {editProdModifiers.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {editProdModifiers.map((mod) => (
+                      <div
+                        key={mod.id}
+                        className={`flex items-center justify-between p-2.5 rounded-2xl border transition text-xs ${
+                          mod.available ? 'bg-gray-50 border-gray-200' : 'bg-rose-50/40 border-rose-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${mod.available ? 'text-slate-800' : 'text-slate-500 line-through'}`}>
+                            {mod.name}
+                          </span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${mod.price > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {mod.price > 0 ? `+$${mod.price}` : 'Gratis ($0)'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEditModifierAvailability(mod.id)}
+                            className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg uppercase transition cursor-pointer ${
+                              mod.available 
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                                : 'bg-rose-100 text-rose-800 hover:bg-rose-200 font-black'
+                            }`}
+                          >
+                            {mod.available ? '● DISPONIBLE' : '○ AGOTADO'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModifierFromEditProduct(mod.id)}
+                            className="text-gray-400 hover:text-rose-500 p-1 transition cursor-pointer"
+                            title="Eliminar modificador"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic text-center py-2">
+                    No hay modificadores dados de alta para este platillo.
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-4 pt-2">
                 <button
                   type="button"
@@ -7520,6 +8925,141 @@ Al confirmar, se guardará el corte de caja y se generará un ticket impreso con
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Modifiers Manager Modal */}
+      {managingModifiersProduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full border border-gray-100 shadow-2xl relative my-8 animate-scale-in">
+            <button
+              onClick={() => setManagingModifiersProduct(null)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-slate-800 cursor-pointer p-1 rounded-full hover:bg-gray-50 transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="text-center mb-5">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2.5">
+                <Utensils className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                Modificadores de: {managingModifiersProduct.name}
+              </h3>
+              <p className="text-xs text-gray-400 font-bold mt-1 uppercase">
+                Configura ingredientes extras, costos y disponibilidad
+              </p>
+            </div>
+
+            {/* Quick Add Form */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 mb-4">
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase mb-1.5">
+                Agregar Nuevo Modificador / Ingrediente
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={quickModName}
+                  onChange={(e) => setQuickModName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToQuickProduct(); } }}
+                  placeholder="ej: Tocino crujiente, Sin cebolla"
+                  className="flex-1 bg-white border border-gray-200 text-slate-800 font-semibold rounded-xl p-2.5 text-xs focus:ring-1 focus:ring-brand-primary outline-hidden"
+                />
+                <div className="relative w-24">
+                  <span className="absolute left-2.5 top-2.5 text-xs text-gray-400 font-bold">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={quickModPrice}
+                    onChange={(e) => setQuickModPrice(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModifierToQuickProduct(); } }}
+                    placeholder="0.00"
+                    title="0 para modificador gratis / sin costo adicional"
+                    className="w-full pl-6 bg-white border border-gray-200 text-slate-800 font-semibold rounded-xl p-2.5 text-xs focus:ring-1 focus:ring-brand-primary outline-hidden"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddModifierToQuickProduct}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Agregar
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 font-medium mt-1.5">
+                * Si el precio es $0, el platillo no aumentará de precio.
+              </p>
+            </div>
+
+            {/* List of Modifiers */}
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1 mb-5">
+              {(() => {
+                const currentMods: ProductModifier[] = ((managingModifiersProduct.modifiers && managingModifiersProduct.modifiers.length > 0) ? managingModifiersProduct.modifiers : (managingModifiersProduct.extras || [])).map((m: any, idx: number) => ({
+                  id: m.id || `mod_${idx}`,
+                  name: m.name,
+                  price: typeof m.price === 'number' ? m.price : 0,
+                  available: m.available !== false
+                }));
+
+                if (currentMods.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-400 italic text-center py-6">
+                      Este platillo aún no tiene modificadores registrados. ¡Agrega el primero arriba!
+                    </p>
+                  );
+                }
+
+                return currentMods.map((mod) => (
+                  <div
+                    key={mod.id || mod.name}
+                    className={`flex items-center justify-between p-3 rounded-2xl border transition text-xs ${
+                      mod.available ? 'bg-white border-slate-200 shadow-2xs' : 'bg-rose-50/50 border-rose-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold ${mod.available ? 'text-slate-800' : 'text-slate-500 line-through'}`}>
+                        {mod.name}
+                      </span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${mod.price > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                        {mod.price > 0 ? `+$${mod.price}` : 'Gratis ($0)'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleModifierAvailability(managingModifiersProduct.id, mod.id || mod.name, mod.available)}
+                        className={`text-[10px] font-extrabold px-3 py-1 rounded-xl uppercase transition cursor-pointer ${
+                          mod.available 
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
+                            : 'bg-rose-100 text-rose-800 hover:bg-rose-200 font-black'
+                        }`}
+                      >
+                        {mod.available ? '● DISPONIBLE' : '○ AGOTADO'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveModifierFromQuickProduct(mod.id || mod.name)}
+                        className="text-gray-400 hover:text-rose-500 p-1.5 transition cursor-pointer"
+                        title="Eliminar modificador"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setManagingModifiersProduct(null)}
+              className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-2xl text-xs uppercase tracking-wider transition cursor-pointer"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}

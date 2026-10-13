@@ -41,6 +41,14 @@ export interface Restaurant {
   featured?: boolean;
   tables?: string[];
   qrOrderingMode?: 'ALWAYS_ACTIVE' | 'ALWAYS_DISABLED' | 'AUTOMATIC';
+  customCategories?: string[];
+}
+
+export interface ProductModifier {
+  id: string;
+  name: string;
+  price: number; // 0 para modificador sin costo extra / gratis, o > 0 para costo adicional
+  available: boolean; // true = disponible, false = agotado (temporalmente no disponible)
 }
 
 export interface Product {
@@ -55,8 +63,10 @@ export interface Product {
   available: boolean;
   type?: 'FOOD' | 'DRINK'; // 'FOOD' (Alimento) or 'DRINK' (Bebida)
   variants?: { name: string; options: string[] }[];
-  extras?: { name: string; price: number }[];
+  extras?: ProductModifier[];
+  modifiers?: ProductModifier[];
   ingredients?: { ingredientId: string; qtyPerProduct: number }[];
+  createdAt?: number;
 }
 
 export interface Driver {

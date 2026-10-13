@@ -19,7 +19,8 @@ const defaultRestaurants: Restaurant[] = [
     reviewsCount: 154,
     deliveryTime: '20-30 min',
     deliveryFee: 0,
-    featured: true
+    featured: true,
+    customCategories: ['Tacos Tradicionales', 'Especialidades al Pastor', 'Bebidas y Aguas Frescas', 'Postres']
   },
   {
     id: 'rest_2',
@@ -38,7 +39,8 @@ const defaultRestaurants: Restaurant[] = [
     reviewsCount: 98,
     deliveryTime: '30-45 min',
     deliveryFee: 0,
-    featured: true
+    featured: true,
+    customCategories: ['Pizzas Clásicas', 'Pizzas Especiales', 'Pastas', 'Bebidas']
   },
   {
     id: 'rest_3',
@@ -57,7 +59,8 @@ const defaultRestaurants: Restaurant[] = [
     reviewsCount: 210,
     deliveryTime: '25-40 min',
     deliveryFee: 0,
-    featured: true
+    featured: true,
+    customCategories: ['Rolls Tradicionales', 'Rolls Especiales', 'Entradas Japonesas', 'Bebidas']
   },
   {
     id: 'rest_4',
@@ -75,7 +78,8 @@ const defaultRestaurants: Restaurant[] = [
     rating: 4.7,
     reviewsCount: 85,
     deliveryTime: '15-25 min',
-    deliveryFee: 0
+    deliveryFee: 0,
+    customCategories: ['Hamburguesas Gigantes', 'Snacks y Acompañamientos', 'Malteadas y Bebidas']
   },
   {
     id: 'rest_5',
@@ -93,7 +97,8 @@ const defaultRestaurants: Restaurant[] = [
     rating: 4.5,
     reviewsCount: 12,
     deliveryTime: '15-30 min',
-    deliveryFee: 0
+    deliveryFee: 0,
+    customCategories: ['Café Caliente', 'Bebidas Frías', 'Repostería y Panadería']
   }
 ];
 
@@ -105,13 +110,15 @@ const defaultProducts: Product[] = [
     description: '5 deliciosos tacos con piña, cilantro, cebolla y salsa de la casa.',
     price: 75,
     image: 'https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?auto=format&fit=crop&q=80&w=300',
-    category: 'Tacos',
+    category: 'Tacos Tradicionales',
     prepTime: 8,
     available: true,
     variants: [{ name: 'Tortilla', options: ['Maíz', 'Harina'] }],
     extras: [
-      { name: 'Queso extra', price: 15 },
-      { name: 'Aguacate extra', price: 12 }
+      { id: 'mod_1_1', name: 'Queso extra', price: 15, available: true },
+      { id: 'mod_1_2', name: 'Aguacate extra', price: 12, available: true },
+      { id: 'mod_1_3', name: 'Sin cebolla (Sin costo)', price: 0, available: true },
+      { id: 'mod_1_4', name: 'Salsa habanera extra', price: 5, available: false }
     ]
   },
   {
@@ -121,10 +128,10 @@ const defaultProducts: Product[] = [
     description: 'Tortilla de harina grande con carne al pastor, queso derretido y piña.',
     price: 55,
     image: 'https://images.unsplash.com/photo-1624462966581-bc6d768cbce5?auto=format&fit=crop&q=80&w=300',
-    category: 'Tacos',
+    category: 'Especialidades al Pastor',
     prepTime: 10,
     available: true,
-    extras: [{ name: 'Guacamole', price: 15 }]
+    extras: [{ id: 'mod_g1', name: 'Guacamole', price: 15, available: true }]
   },
   {
     id: 'prod_1_3',
@@ -133,8 +140,31 @@ const defaultProducts: Product[] = [
     description: 'Tortilla tostada al carbón con queso fundido y carne de bistec.',
     price: 35,
     image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&q=80&w=300',
-    category: 'Tacos',
+    category: 'Especialidades al Pastor',
     prepTime: 8,
+    available: true
+  },
+  {
+    id: 'prod_1_4',
+    restaurantId: 'rest_1',
+    name: 'Agua Fresca de Horchata (1L)',
+    description: 'Receta tradicional con canela fresca, leche y arroz aromatizado.',
+    price: 35,
+    image: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&q=80&w=300',
+    category: 'Bebidas y Aguas Frescas',
+    prepTime: 3,
+    available: true,
+    extras: [{ id: 'mod_w1', name: 'Hielo extra (Sin costo)', price: 0, available: true }]
+  },
+  {
+    id: 'prod_1_5',
+    restaurantId: 'rest_1',
+    name: 'Flan Casero Napolitano',
+    description: 'Receta clásica de la abuela con caramelo dorado y queso crema.',
+    price: 45,
+    image: 'https://images.unsplash.com/photo-1528975604071-b4dc52a2d18c?auto=format&fit=crop&q=80&w=300',
+    category: 'Postres',
+    prepTime: 2,
     available: true
   },
   {
@@ -159,7 +189,7 @@ const defaultProducts: Product[] = [
     category: 'Pizza',
     prepTime: 12,
     available: true,
-    extras: [{ name: 'Orilla de queso', price: 40 }]
+    extras: [{ id: 'mod_p2_1', name: 'Orilla de queso', price: 40, available: true }]
   },
   {
     id: 'prod_3_1',
@@ -171,7 +201,10 @@ const defaultProducts: Product[] = [
     category: 'Sushi',
     prepTime: 12,
     available: true,
-    extras: [{ name: 'Queso crema extra', price: 15 }, { name: 'Salsa Tampico', price: 20 }]
+    extras: [
+      { id: 'mod_s3_1', name: 'Queso crema extra', price: 15, available: true },
+      { id: 'mod_s3_2', name: 'Salsa Tampico', price: 20, available: true }
+    ]
   },
   {
     id: 'prod_3_2',
@@ -195,7 +228,11 @@ const defaultProducts: Product[] = [
     prepTime: 12,
     available: true,
     variants: [{ name: 'Término', options: ['Medio', 'Tres Cuartos', 'Bien Cocido'] }],
-    extras: [{ name: 'Papas fritas extra', price: 30 }, { name: 'Huevo estrellado', price: 15 }]
+    extras: [
+      { id: 'mod_h4_1', name: 'Papas fritas extra', price: 30, available: true },
+      { id: 'mod_h4_2', name: 'Huevo estrellado', price: 15, available: true },
+      { id: 'mod_h4_3', name: 'Sin aderezo', price: 0, available: true }
+    ]
   }
 ];
 
